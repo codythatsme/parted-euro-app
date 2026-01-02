@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type Prisma } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 import { adminProcedure, createTRPCRouter } from "../trpc";
 
 // Define part input validation schema
@@ -202,6 +203,19 @@ export const partRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { partNo, data } = input;
       const { cars = [], partTypes = [], ...updateData } = data;
+
+      // Verify the part exists before attempting update
+      const existing = await ctx.db.partDetail.findUnique({
+        where: { partNo },
+        select: { partNo: true },
+      });
+
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Part "${partNo}" no longer exists. It may have been deleted.`,
+        });
+      }
 
       // First disconnect all existing relationships
       await ctx.db.partDetail.update({
