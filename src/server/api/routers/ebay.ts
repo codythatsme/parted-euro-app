@@ -263,7 +263,7 @@ export const ebayRouter = createTRPCRouter({
           .max(80, { message: "Title must be less than 80 characters" }),
         description: z.string(),
         price: z.number(),
-        partNo: z.string(),
+        partNo: z.string().trim(),
         condition: z.string(),
         conditionDescription: z.string(),
         images: z.array(z.string()),

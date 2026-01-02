@@ -197,7 +197,7 @@ const formSchema = z
     // Part fields
     partDetailsId: z.string().optional(), // Make this optional to allow new part creation
     isNewPart: z.boolean().default(false),
-    partNo: z.string().optional(),
+    partNo: z.string().trim().optional(),
     alternatePartNumbers: z.string().optional(),
     name: z.string().optional(),
     weight: z.coerce.number().optional(),

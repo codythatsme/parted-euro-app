@@ -34,7 +34,7 @@ import Compressor from "compressorjs";
 
 // Define the form schema
 const formSchema = z.object({
-  partNo: z.string().min(1, "Part number is required"),
+  partNo: z.string().trim().min(1, "Part number is required"),
   variant: z.string().optional(),
 });
 

@@ -44,7 +44,7 @@ import { FilterableCarSelect } from "~/components/ui/filterable-car-select";
 
 // Schema for form validation
 const formSchema = z.object({
-  partNo: z.string().min(1, "Part number is required"),
+  partNo: z.string().trim().min(1, "Part number is required"),
   alternatePartNumbers: z.string().optional(),
   name: z.string().min(1, "Name is required"),
   weight: z.coerce.number().min(0, "Weight must be a positive number"),
@@ -164,7 +164,7 @@ export function PartForm({
   const onSubmit = (values: FormValues) => {
     if (isEditing && defaultValues) {
       updateMutation.mutate({
-        partNo: defaultValues.partNo,
+        partNo: defaultValues.partNo.trim(),
         data: {
           ...values,
           cars: selectedCars,
