@@ -6,9 +6,6 @@ import { type Metadata } from "next";
 import { TRPCReactProvider } from "~/trpc/react";
 import { NuqsAdapter } from "nuqs/adapters/next";
 import { Toaster } from "~/components/ui/sonner";
-import { NextSSRPlugin } from "@uploadthing/react/next-ssr-plugin";
-import { extractRouterConfig } from "uploadthing/server";
-import { uploadRouter } from "~/server/uploadthing";
 import { CartUIProvider } from "~/components/cart-provider";
 
 export const metadata: Metadata = {
@@ -37,7 +34,6 @@ export default function RootLayout({
       )}
       <body>
         <TRPCReactProvider>
-          <NextSSRPlugin routerConfig={extractRouterConfig(uploadRouter)} />
           <CartUIProvider>
             <NuqsAdapter>{children}</NuqsAdapter>
           </CartUIProvider>

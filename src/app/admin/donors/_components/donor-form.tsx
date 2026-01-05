@@ -50,7 +50,7 @@ import {
   CommandItem,
 } from "~/components/ui/command";
 import { AspectRatio } from "~/components/ui/aspect-ratio";
-import { UploadDropzone } from "~/components/UploadThing";
+import { UploadDropzone } from "~/components/CloudinaryUpload";
 import Compressor from "compressorjs";
 import {
   DndContext,

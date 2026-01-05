@@ -52,7 +52,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { UploadButton, UploadDropzone } from "~/components/UploadThing";
+import { UploadButton, UploadDropzone } from "~/components/CloudinaryUpload";
 import { Badge } from "~/components/ui/badge";
 import { type AdminListingsItem } from "~/trpc/shared";
 import Compressor from "compressorjs";

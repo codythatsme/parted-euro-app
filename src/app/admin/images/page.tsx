@@ -7,8 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { api } from "~/trpc/react";
 import { toast } from "sonner";
-import { genUploader } from "uploadthing/client";
-import type { OurFileRouter } from "~/server/uploadthing";
+import { uploadToCloudinary } from "~/lib/cloudinary-client";
 import { Image as ImageIcon, Plus, Check, Upload, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -46,9 +45,6 @@ type ExistingImage = {
   order: number;
   variant?: string | null;
 };
-
-// Generate the typed uploader
-const { uploadFiles } = genUploader<OurFileRouter>();
 
 export default function MobileUploadPage() {
   useAdminTitle("Images");
@@ -179,18 +175,17 @@ export default function MobileUploadPage() {
         const file = processedFiles[i];
         if (!file) continue; // Skip if file is undefined
 
-        const result = await uploadFiles("partImage", {
-          files: [file],
-          headers: {
+        const result = await uploadToCloudinary({
+          endpoint: "partImage",
+          file,
+          metadata: {
             partNo: currentPartNo,
             fileIndex: i.toString(),
             variant: currentVariant ?? "",
           },
         });
 
-        if (result?.[0]) {
-          uploadResults.push(result[0]);
-        }
+        uploadResults.push(result);
       }
 
       // Handle successful uploads

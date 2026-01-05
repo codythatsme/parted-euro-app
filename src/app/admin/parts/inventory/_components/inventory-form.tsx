@@ -60,7 +60,7 @@ import { type AdminInventoryItem } from "~/trpc/shared";
 import { useDebounce } from "~/hooks/use-debounce";
 import { VirtualizedMultiSelect } from "~/components/ui/virtualized-multi-select";
 import { AspectRatio } from "~/components/ui/aspect-ratio";
-import { UploadButton, UploadDropzone } from "~/components/UploadThing";
+import { UploadButton, UploadDropzone } from "~/components/CloudinaryUpload";
 import {
   DndContext,
   closestCenter,
@@ -1330,7 +1330,10 @@ export function InventoryForm({
                             onClientUploadComplete={(res) => {
                               if (res) {
                                 handleImageUpload(
-                                  res.map((img) => img.serverData),
+                                  res.map((img) => ({
+                                    url: img.serverData.url,
+                                    id: img.serverData.id ?? img.id ?? crypto.randomUUID(),
+                                  })),
                                 );
                                 toast.success("Images uploaded successfully");
                               }
