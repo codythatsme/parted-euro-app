@@ -749,7 +749,16 @@ export const checkoutRouter = createTRPCRouter({
       const isAdmin = ctx.session?.user?.isAdmin ?? false;
 
       if (weight >= 20) {
-        let shippingServices = await getInterparcelShippingServices(input);
+        let shippingServices: StripeShippingOption[] = [];
+        try {
+          shippingServices = await getInterparcelShippingServices(input);
+        } catch (error) {
+          if (destinationCountry !== "AU") throw error;
+          console.error(
+            "Failed to fetch Interparcel services for heavy AU shipping:",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
         if (destinationCountry === "AU") {
           shippingServices = [...shippingServices, pickupShippingOption];
         }
@@ -771,10 +780,17 @@ export const checkoutRouter = createTRPCRouter({
         }
         return shippingServices;
       }
-      let shippingServices;
-      let interparcelServices = [] as StripeShippingOption[];
+      let shippingServices: StripeShippingOption[] = [];
+      let interparcelServices: StripeShippingOption[] = [];
       if ([width, length, height].every((dimension) => dimension < 105)) {
-        shippingServices = await getDomesticShippingServices(input);
+        try {
+          shippingServices = await getDomesticShippingServices(input);
+        } catch (error) {
+          console.error(
+            "Failed to fetch AusPost domestic services:",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
         // Try to get Interparcel services, but don't fail if it errors
         try {
           interparcelServices = await getInterparcelShippingServices(input);
@@ -786,7 +802,14 @@ export const checkoutRouter = createTRPCRouter({
           // Continue without Interparcel services
         }
       } else {
-        shippingServices = await getInterparcelShippingServices(input);
+        try {
+          shippingServices = await getInterparcelShippingServices(input);
+        } catch (error) {
+          console.error(
+            "Failed to fetch Interparcel services for oversized AU shipping:",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
       }
       let allShippingServices = [
         pickupShippingOption,
