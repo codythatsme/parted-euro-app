@@ -14,10 +14,6 @@ export type XeroItem = {
   unitAmount: number;
   accountCode: string;
   lineAmount?: number;
-  tracking?: {
-    name: string;
-    option: string;
-  }[];
 };
 
 type CreateInvoiceOptions = {
@@ -161,15 +157,7 @@ export const createInvoiceFromStripeEvent = async (
         quantity: item.quantity ?? 1,
         unitAmount: item.price!.unit_amount! / 100,
         accountCode: "200",
-        tracking: [
-          {
-            name: "VIN",
-            // @ts-expect-error: bad types on stripe event
-            // eslint-disable-next-line
-            option: item.price.product.metadata.VIN.slice(-7),
-          },
-        ],
-      } as XeroItem;
+      };
     });
 
     let shipping;
