@@ -405,13 +405,22 @@ const getInterparcelShippingServices = async (input: ShippingServicesInput) => {
     throw new Error("Failed to obtain CSRF token from Interparcel");
   }
 
-  const requests = shippingServicesAvailableData.services
-    .filter((service) => !service.service.includes("Hunter"))
-    .filter((service) => {
-      if (b2b) return true;
-      return !service.service.toLowerCase().includes("b2b");
-    })
-    .map(async (service) => {
+  const afterHunterFilter = shippingServicesAvailableData.services.filter(
+    (service) => !service.service.includes("Hunter"),
+  );
+
+  const b2bFilteredCount = b2b
+    ? 0
+    : afterHunterFilter.filter((s) =>
+        s.service.toLowerCase().includes("b2b"),
+      ).length;
+
+  const servicesToQuote = afterHunterFilter.filter((service) => {
+    if (b2b) return true;
+    return !service.service.toLowerCase().includes("b2b");
+  });
+
+  const requests = servicesToQuote.map(async (service) => {
       try {
         const searchParams = new URLSearchParams({
           ...interparcelParams,
@@ -460,10 +469,10 @@ const getInterparcelShippingServices = async (input: ShippingServicesInput) => {
         (result as PromiseFulfilledResult<StripeShippingOption>).value,
     ) as StripeShippingOption[];
 
-  if (!validServices.length) {
+  if (!validServices.length && b2bFilteredCount === 0) {
     throw new Error("Unable to ship this item to the destination country");
   }
-  return validServices.slice(0, 4);
+  return { services: validServices.slice(0, 4), b2bFilteredCount };
 };
 
 export type CheckoutItem = {
@@ -744,83 +753,107 @@ export const checkoutRouter = createTRPCRouter({
   }),
   getShippingServices: publicProcedure
     .input(getShippingServicesInputSchema)
-    .query(async ({ input, ctx }): Promise<StripeShippingOption[]> => {
-      const { weight, destinationCountry, length, width, height } = input;
-      const isAdmin = ctx.session?.user?.isAdmin ?? false;
+    .query(
+      async ({
+        input,
+        ctx,
+      }): Promise<{
+        services: StripeShippingOption[];
+        hasB2BOnlyServices: boolean;
+      }> => {
+        const { weight, destinationCountry, length, width, height } = input;
+        const isAdmin = ctx.session?.user?.isAdmin ?? false;
+        let totalB2BFiltered = 0;
 
-      if (weight >= 20) {
+        if (weight >= 20) {
+          let shippingServices: StripeShippingOption[] = [];
+          try {
+            const result = await getInterparcelShippingServices(input);
+            shippingServices = result.services;
+            totalB2BFiltered += result.b2bFilteredCount;
+          } catch (error) {
+            if (destinationCountry !== "AU") throw error;
+            console.error(
+              "Failed to fetch Interparcel services for heavy AU shipping:",
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+          if (destinationCountry === "AU") {
+            shippingServices = [...shippingServices, pickupShippingOption];
+          }
+          if (isAdmin) {
+            shippingServices = [adminShippingOption, ...shippingServices];
+          }
+          return {
+            services: shippingServices,
+            hasB2BOnlyServices: !input.b2b && totalB2BFiltered > 0,
+          };
+        }
+        if (destinationCountry !== "AU") {
+          let shippingServices: StripeShippingOption[] = [];
+          if ([width, length, height].every((dimension) => dimension < 105)) {
+            shippingServices =
+              await getAusPostInternationalShippingServices(input);
+          } else {
+            const result = await getInterparcelShippingServices(input);
+            shippingServices = result.services;
+            totalB2BFiltered += result.b2bFilteredCount;
+          }
+          if (isAdmin) {
+            shippingServices = [adminShippingOption, ...shippingServices];
+          }
+          return {
+            services: shippingServices,
+            hasB2BOnlyServices: !input.b2b && totalB2BFiltered > 0,
+          };
+        }
         let shippingServices: StripeShippingOption[] = [];
-        try {
-          shippingServices = await getInterparcelShippingServices(input);
-        } catch (error) {
-          if (destinationCountry !== "AU") throw error;
-          console.error(
-            "Failed to fetch Interparcel services for heavy AU shipping:",
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-        if (destinationCountry === "AU") {
-          shippingServices = [...shippingServices, pickupShippingOption];
-        }
-        if (isAdmin) {
-          shippingServices = [adminShippingOption, ...shippingServices];
-        }
-        return shippingServices;
-      }
-      if (destinationCountry !== "AU") {
-        let shippingServices;
+        let interparcelServices: StripeShippingOption[] = [];
         if ([width, length, height].every((dimension) => dimension < 105)) {
-          shippingServices =
-            await getAusPostInternationalShippingServices(input);
+          try {
+            shippingServices = await getDomesticShippingServices(input);
+          } catch (error) {
+            console.error(
+              "Failed to fetch AusPost domestic services:",
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+          try {
+            const result = await getInterparcelShippingServices(input);
+            interparcelServices = result.services;
+            totalB2BFiltered += result.b2bFilteredCount;
+          } catch (error) {
+            console.error(
+              "Failed to fetch Interparcel services for domestic AU shipping:",
+              error instanceof Error ? error.message : String(error),
+            );
+          }
         } else {
-          shippingServices = await getInterparcelShippingServices(input);
+          try {
+            const result = await getInterparcelShippingServices(input);
+            shippingServices = result.services;
+            totalB2BFiltered += result.b2bFilteredCount;
+          } catch (error) {
+            console.error(
+              "Failed to fetch Interparcel services for oversized AU shipping:",
+              error instanceof Error ? error.message : String(error),
+            );
+          }
         }
+        let allShippingServices = [
+          pickupShippingOption,
+          ...shippingServices,
+          ...interparcelServices,
+        ];
+
         if (isAdmin) {
-          shippingServices = [adminShippingOption, ...shippingServices];
+          allShippingServices = [adminShippingOption, ...allShippingServices];
         }
-        return shippingServices;
-      }
-      let shippingServices: StripeShippingOption[] = [];
-      let interparcelServices: StripeShippingOption[] = [];
-      if ([width, length, height].every((dimension) => dimension < 105)) {
-        try {
-          shippingServices = await getDomesticShippingServices(input);
-        } catch (error) {
-          console.error(
-            "Failed to fetch AusPost domestic services:",
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-        // Try to get Interparcel services, but don't fail if it errors
-        try {
-          interparcelServices = await getInterparcelShippingServices(input);
-        } catch (error) {
-          console.error(
-            "Failed to fetch Interparcel services for domestic AU shipping:",
-            error instanceof Error ? error.message : String(error),
-          );
-          // Continue without Interparcel services
-        }
-      } else {
-        try {
-          shippingServices = await getInterparcelShippingServices(input);
-        } catch (error) {
-          console.error(
-            "Failed to fetch Interparcel services for oversized AU shipping:",
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      }
-      let allShippingServices = [
-        pickupShippingOption,
-        ...shippingServices,
-        ...interparcelServices,
-      ];
 
-      if (isAdmin) {
-        allShippingServices = [adminShippingOption, ...allShippingServices];
-      }
-
-      return allShippingServices.slice(0, 4);
-    }),
+        return {
+          services: allShippingServices.slice(0, 4),
+          hasB2BOnlyServices: !input.b2b && totalB2BFiltered > 0,
+        };
+      },
+    ),
 });

@@ -40,6 +40,16 @@ import {
 } from "./_components/AddressAutocomplete";
 import { toast } from "sonner";
 import { Alert, AlertTitle, AlertDescription } from "~/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "~/components/ui/alert-dialog";
 
 // Define the form schema using zod
 const checkoutFormSchema = z
@@ -104,6 +114,9 @@ export default function Checkout() {
           postalCode: "",
         },
   );
+
+  const [pendingFormData, setPendingFormData] =
+    useState<CheckoutFormValues | null>(null);
 
   const { isLoaded } = useGoogleMapsApi();
   const utils = api.useUtils();
@@ -256,9 +269,38 @@ export default function Checkout() {
     }
   }, []);
 
-  // Form submission handler
+  type ShippingServices = NonNullable<typeof shippingServices.data>["services"];
+
+  const isPickupOnly = (services: ShippingServices) =>
+    services
+      .filter((s) => s.shipping_rate_data.display_name !== "Admin Shipping")
+      .every((s) => s.shipping_rate_data.display_name === "Pickup from Parted Euro");
+
+  const hasPickup = (services: ShippingServices) =>
+    services.some((s) => s.shipping_rate_data.display_name === "Pickup from Parted Euro");
+
+  async function proceedToStripe(data: CheckoutFormValues) {
+    if (!shippingServices.data) return;
+
+    const { url } = await getStripeCheckout({
+      items: cart.map((item) => ({
+        itemId: item.listingId,
+        quantity: item.quantity,
+      })),
+      name: data.name,
+      email: data.email,
+      countryCode: data.shipToCountryCode,
+      shippingOptions: shippingServices.data.services,
+    });
+
+    if (url) {
+      window.location.href = url;
+    } else {
+      toast.error("Error while creating checkout session. Please try again.");
+    }
+  }
+
   async function onSubmit(data: CheckoutFormValues) {
-    // Check if shipping to Australia but no address
     if (data.shipToCountryCode === "AU" && !data.address.formattedAddress) {
       form.setError("address.formattedAddress", {
         type: "manual",
@@ -272,24 +314,16 @@ export default function Checkout() {
       return;
     }
 
-    // Process checkout
+    const { services, hasB2BOnlyServices } = shippingServices.data;
+    const pickupOnly = isPickupOnly(services);
+    const noShipping = services.length === 0;
 
-    const { url } = await getStripeCheckout({
-      items: cart.map((item) => ({
-        itemId: item.listingId,
-        quantity: item.quantity,
-      })),
-      name: data.name,
-      email: data.email,
-      countryCode: data.shipToCountryCode,
-      shippingOptions: shippingServices.data,
-    });
-
-    if (url) {
-      window.location.href = url;
-    } else {
-      toast.error("Error while creating checkout session. Please try again.");
+    if (!pickupOnly && !noShipping) {
+      await proceedToStripe(data);
+      return;
     }
+
+    setPendingFormData(data);
   }
 
   if (!isLoaded) {
@@ -529,6 +563,109 @@ export default function Checkout() {
           </div>
         </div>
       </div>
+
+      <AlertDialog
+        open={pendingFormData !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingFormData(null);
+        }}
+      >
+        <AlertDialogContent>
+          {(() => {
+            const b2bAvailable =
+              shippingServices.data?.hasB2BOnlyServices ?? false;
+            const pickup = shippingServices.data
+              ? hasPickup(shippingServices.data.services)
+              : false;
+
+            if (pickup && !b2bAvailable) {
+              return (
+                <>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Pickup Only</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      No shipping options available for this order. You&apos;ll
+                      need to collect from our Knoxfield, VIC warehouse.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        if (pendingFormData) {
+                          void proceedToStripe(pendingFormData);
+                        }
+                      }}
+                    >
+                      Continue with Pickup
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </>
+              );
+            }
+
+            if (pickup && b2bAvailable) {
+              return (
+                <>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Limited Shipping</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Shipping for this order is only available to business
+                      addresses. Enable B2B Delivery to see shipping options, or
+                      continue with pickup only.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setPendingFormData(null);
+                        form.setValue("isB2B", true);
+                      }}
+                    >
+                      Enable B2B
+                    </Button>
+                    <AlertDialogAction
+                      onClick={() => {
+                        if (pendingFormData) {
+                          void proceedToStripe(pendingFormData);
+                        }
+                      }}
+                    >
+                      Continue with Pickup
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </>
+              );
+            }
+
+            // No shipping + B2B available (international)
+            return (
+              <>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Shipping Unavailable</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Shipping for this order is only available to business
+                    addresses. Enable B2B Delivery to see shipping options.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      setPendingFormData(null);
+                      form.setValue("isB2B", true);
+                    }}
+                  >
+                    Enable B2B
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </>
+            );
+          })()}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
