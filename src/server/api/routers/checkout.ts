@@ -522,11 +522,6 @@ export const createStripeSession = async (input: StripeSessionRequest) => {
         },
         parts: {
           select: {
-            donor: {
-              select: {
-                vin: true,
-              },
-            },
             inventoryLocation: {
               select: {
                 name: true,
@@ -566,7 +561,6 @@ export const createStripeSession = async (input: StripeSessionRequest) => {
             name: item.title,
             images: [item.images[0]!.url],
             metadata: {
-              VIN: item.parts[0]?.donor!.vin,
               inventoryLocations: item.parts
                 .map((part) => part.inventoryLocation?.name)
                 .join(","),
