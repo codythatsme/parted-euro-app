@@ -104,7 +104,7 @@ export const listingsRouter = createTRPCRouter({
       return listing;
     }),
 
-  update: publicProcedure
+  update: adminProcedure
     .input(
       z.object({
         id: z.string(),
@@ -206,7 +206,7 @@ export const listingsRouter = createTRPCRouter({
       return updatedListing;
     }),
 
-  delete: publicProcedure
+  delete: adminProcedure
     .input(
       z.object({
         id: z.string(),
