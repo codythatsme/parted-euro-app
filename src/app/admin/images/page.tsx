@@ -117,8 +117,6 @@ export default function MobileUploadPage() {
     setUploadComplete(false);
   };
 
-  // (legacy helper removed; handled via upload flow)
-
   // Handle file selection and automatically start upload
   const handleFileSelect = async (
     event: React.ChangeEvent<HTMLInputElement>,

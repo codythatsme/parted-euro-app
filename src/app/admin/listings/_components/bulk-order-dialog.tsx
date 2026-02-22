@@ -48,7 +48,7 @@ export function BulkOrderDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const utils = api.useUtils();
-  const bulkReduceMutation = api.listings.markPartsSold.useMutation({
+  const markPartsSoldMutation = api.listings.markPartsSold.useMutation({
     onSuccess: async () => {
       await utils.listings.getAllAdmin.invalidate();
     },
@@ -111,7 +111,7 @@ export function BulkOrderDialog({
         quantity: parseInt(input.quantityValue) || 1,
       }));
       if (items.length === 0) return;
-      await bulkReduceMutation.mutateAsync({ items });
+      await markPartsSoldMutation.mutateAsync({ items });
       toast.success("eBay order created. Inventory marked sold.");
       onOpenChange(false);
     } catch {
@@ -190,9 +190,9 @@ export function BulkOrderDialog({
             type="button"
             variant="secondary"
             onClick={handleCreateEbayOrder}
-            disabled={bulkReduceMutation.isPending}
+            disabled={markPartsSoldMutation.isPending}
           >
-            {bulkReduceMutation.isPending && (
+            {markPartsSoldMutation.isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             Create eBay Order
