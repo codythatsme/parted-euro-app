@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type Prisma } from "@prisma/client";
+import { PartStatus } from "@prisma/client";
 import { adminProcedure, createTRPCRouter } from "../trpc";
 import { TRPCError } from "@trpc/server";
 
@@ -10,7 +10,9 @@ const inventorySchema = z.object({
   donorVin: z.string().trim().optional().nullable(),
   inventoryLocationId: z.string().optional().nullable(),
   variant: z.string().optional().nullable(),
-  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+  status: z.nativeEnum(PartStatus).optional(),
+  allocatedToListingId: z.string().optional().nullable(),
+  count: z.coerce.number().int().min(1).optional(),
   images: z
     .array(
       z.object({
@@ -28,7 +30,7 @@ export const inventoryRouter = createTRPCRouter({
   getAllForSelect: adminProcedure.query(async ({ ctx }) => {
     const inventory = await ctx.db.part.findMany({
       where: {
-        sold: false,
+        status: PartStatus.AVAILABLE,
       },
       select: {
         id: true,
@@ -39,9 +41,10 @@ export const inventoryRouter = createTRPCRouter({
           },
         },
         variant: true,
-        listing: {
+        allocatedToListing: {
           select: {
             id: true,
+            title: true,
           },
         },
       },
@@ -57,7 +60,8 @@ export const inventoryRouter = createTRPCRouter({
       label: `${item.partDetails.name} - (${item.partDetails.partNo})${
         item.variant ? ` - ${item.variant}` : ""
       }`,
-      isAssigned: !!item.listing.length,
+      isAssigned: !!item.allocatedToListing?.id,
+      listingTitle: item.allocatedToListing?.title ?? null,
     }));
   }),
 
@@ -89,9 +93,10 @@ export const inventoryRouter = createTRPCRouter({
             name: true,
           },
         },
-        listing: {
+        allocatedToListing: {
           select: {
             id: true,
+            title: true,
           },
         },
         images: {
@@ -121,7 +126,7 @@ export const inventoryRouter = createTRPCRouter({
           partDetails: true,
           donor: true,
           inventoryLocation: true,
-          listing: true,
+          allocatedToListing: true,
           images: {
             select: {
               id: true,
@@ -151,41 +156,55 @@ export const inventoryRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       try {
         const { images, ...inventoryData } = input;
+        const createCount = Math.max(1, inventoryData.count ?? 1);
 
-        const inventory = await ctx.db.part.create({
-          data: {
-            partDetailsId: inventoryData.partDetailsId,
-            donorVin:
-              inventoryData.donorVin === "none" ? null : inventoryData.donorVin,
-            inventoryLocationId:
-              inventoryData.inventoryLocationId === "none"
-                ? null
-                : inventoryData.inventoryLocationId,
-            variant: inventoryData.variant ?? null,
-            quantity: inventoryData.quantity,
-            images: images
-              ? {
-                  createMany: {
-                    data: images.map((image) => ({
-                      id: image.isFromPartImages
-                        ? crypto.randomUUID()
-                        : image.id,
-                      url: image.url,
-                      order: image.order,
-                    })),
-                  },
-                }
-              : undefined,
-          },
-          include: {
-            partDetails: true,
-            donor: true,
-            inventoryLocation: true,
-            images: true,
-          },
+        const created = await ctx.db.$transaction(async (tx) => {
+          const createdParts = [];
+          for (let i = 0; i < createCount; i += 1) {
+            const part = await tx.part.create({
+              data: {
+                partDetailsId: inventoryData.partDetailsId,
+                donorVin:
+                  inventoryData.donorVin === "none" ? null : inventoryData.donorVin,
+                inventoryLocationId:
+                  inventoryData.inventoryLocationId === "none"
+                    ? null
+                    : inventoryData.inventoryLocationId,
+                variant: inventoryData.variant ?? null,
+                status: inventoryData.status ?? PartStatus.AVAILABLE,
+                allocatedToListingId:
+                  inventoryData.allocatedToListingId === "none"
+                    ? null
+                    : inventoryData.allocatedToListingId,
+                quantity: 1,
+                images: images
+                  ? {
+                      createMany: {
+                        data: images.map((image) => ({
+                          id: image.isFromPartImages
+                            ? crypto.randomUUID()
+                            : crypto.randomUUID(),
+                          url: image.url,
+                          order: image.order,
+                        })),
+                      },
+                    }
+                  : undefined,
+              },
+              include: {
+                partDetails: true,
+                donor: true,
+                inventoryLocation: true,
+                allocatedToListing: true,
+                images: true,
+              },
+            });
+            createdParts.push(part);
+          }
+          return createdParts;
         });
 
-        return inventory;
+        return created.length === 1 ? created[0] : created;
       } catch (error) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -200,7 +219,7 @@ export const inventoryRouter = createTRPCRouter({
     .input(
       z.object({
         id: z.string().trim(),
-        data: inventorySchema,
+        data: inventorySchema.omit({ count: true, id: true }),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -208,80 +227,19 @@ export const inventoryRouter = createTRPCRouter({
       const { images, ...updateData } = data;
 
       try {
-        // First, get current images for the part to compare
-        const currentImages = await ctx.db.image.findMany({
-          where: { partId: id },
-          select: { id: true },
-        });
-
         // Transaction to ensure data consistency
         return await ctx.db.$transaction(async (tx) => {
-          // If images are provided, handle image updates intelligently
+          // If images are provided, replace all part images.
           if (images) {
-            const currentImageIds = new Set(currentImages.map((img) => img.id));
-            const newImageIds = new Set(
-              images
-                .filter((img) => !img.isFromPartImages) // Only include non-partImages for comparison
-                .map((img) => img.id),
-            );
-
-            // Find images to remove (in current but not in new)
-            const imagesToRemove = [...currentImageIds].filter(
-              (imgId) => !newImageIds.has(imgId),
-            );
-
-            // Find images to add (in new but not in current)
-            const imagesToAdd = [...newImageIds].filter(
-              (imgId) => !currentImageIds.has(imgId),
-            );
-
-            // Find images from partImages that need new records
-            const imagesFromPartImages = images.filter(
-              (img) => img.isFromPartImages,
-            );
-
-            // Only delete images that are not in the new list
-            if (imagesToRemove.length > 0) {
-              await tx.image.deleteMany({
-                where: {
-                  id: { in: imagesToRemove },
-                  partId: id,
-                },
-              });
-            }
-
-            // Connect new images that weren't already connected
-            if (imagesToAdd.length > 0) {
-              await tx.part.update({
-                where: { id },
-                data: {
-                  images: {
-                    connect: imagesToAdd.map((imgId) => ({ id: imgId })),
-                  },
-                },
-              });
-            }
-
-            // Create new images for those from partImages
-            if (imagesFromPartImages.length > 0) {
+            await tx.image.deleteMany({ where: { partId: id } });
+            if (images.length > 0) {
               await tx.image.createMany({
-                data: imagesFromPartImages.map((img) => ({
+                data: images.map((img) => ({
                   id: crypto.randomUUID(),
                   url: img.url,
                   order: img.order,
                   partId: id,
                 })),
-              });
-            }
-
-            // Update the order of all images
-            for (const image of images.filter((img) => !img.isFromPartImages)) {
-              await tx.image.update({
-                where: { id: image.id },
-                data: {
-                  order: image.order,
-                  partId: id, // Ensure it's connected to this part
-                },
               });
             }
           }
@@ -298,12 +256,18 @@ export const inventoryRouter = createTRPCRouter({
                   ? null
                   : updateData.inventoryLocationId,
               variant: updateData.variant ?? null,
-              quantity: updateData.quantity,
+              status: updateData.status,
+              allocatedToListingId:
+                updateData.allocatedToListingId === "none"
+                  ? null
+                  : updateData.allocatedToListingId,
+              quantity: 1,
             },
             include: {
               partDetails: true,
               donor: true,
               inventoryLocation: true,
+              allocatedToListing: true,
               images: {
                 orderBy: {
                   order: "asc",
@@ -330,6 +294,25 @@ export const inventoryRouter = createTRPCRouter({
       const { id } = input;
 
       try {
+        const part = await ctx.db.part.findUnique({
+          where: { id },
+          select: {
+            status: true,
+          },
+        });
+        if (!part) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Inventory item not found",
+          });
+        }
+        if (part.status !== PartStatus.AVAILABLE) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Only AVAILABLE parts can be deleted.",
+          });
+        }
+
         // Delete related images first
         await ctx.db.image.deleteMany({
           where: { partId: id },

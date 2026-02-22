@@ -1,8 +1,12 @@
 import { Stripe } from "stripe";
 import { z } from "zod";
 import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
-import { PrismaClient } from "@prisma/client";
+import { PartStatus } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 // import { createStripeSession } from "@/pages/api/checkout";
+import { db } from "~/server/db";
+import { syncEbayQuantitiesForListings } from "~/server/lib/ebay-sync";
+import { calculateRequiredPartCounts, calculateStock } from "~/server/lib/stock";
 
 type ShippingCountryResponse = {
   countries: Record<"country", AusPostShippingCodes[]>;
@@ -490,8 +494,6 @@ type StripeSessionRequest = {
 };
 
 export const createStripeSession = async (input: StripeSessionRequest) => {
-  const prisma = new PrismaClient();
-
   const stripe = new Stripe(process.env.STRIPE_SECRET!, {
     apiVersion: "2022-11-15",
   });
@@ -505,7 +507,7 @@ export const createStripeSession = async (input: StripeSessionRequest) => {
 
     // get items from query
 
-    const listingsPurchased = await prisma.listing.findMany({
+    const listingsPurchased = await db.listing.findMany({
       where: {
         id: {
           in: items.map((item) => item.itemId),
@@ -520,14 +522,11 @@ export const createStripeSession = async (input: StripeSessionRequest) => {
             order: "asc",
           },
         },
-        parts: {
+        components: {
           select: {
-            inventoryLocation: {
-              select: {
-                name: true,
-              },
-            },
-            partDetails: {
+            partDetailId: true,
+            quantity: true,
+            partDetail: {
               select: {
                 partNo: true,
                 alternatePartNumbers: true,
@@ -540,8 +539,47 @@ export const createStripeSession = async (input: StripeSessionRequest) => {
             },
           },
         },
+        allocatedParts: {
+          select: {
+            inventoryLocation: {
+              select: {
+                name: true,
+              },
+            },
+            id: true,
+            partDetailsId: true,
+            status: true,
+            createdAt: true,
+          },
+        },
       },
     });
+
+    if (listingsPurchased.length !== items.length) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "One or more listings are unavailable.",
+      });
+    }
+
+    for (const listing of listingsPurchased) {
+      const requestedQuantity =
+        items.find((item) => item.itemId === listing.id)?.quantity ?? 0;
+      const availableStock = calculateStock({
+        components: listing.components,
+        inventoryParts: listing.allocatedParts.map((part) => ({
+          partDetailsId: part.partDetailsId,
+          status: part.status,
+        })),
+      });
+
+      if (requestedQuantity > availableStock) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `${listing.title} is out of stock for requested quantity.`,
+        });
+      }
+    }
 
     // create a new customer
 
@@ -561,7 +599,7 @@ export const createStripeSession = async (input: StripeSessionRequest) => {
             name: item.title,
             images: [item.images[0]!.url],
             metadata: {
-              inventoryLocations: item.parts
+              inventoryLocations: item.allocatedParts
                 .map((part) => part.inventoryLocation?.name)
                 .join(","),
             },
@@ -572,46 +610,114 @@ export const createStripeSession = async (input: StripeSessionRequest) => {
       };
     });
 
-    const order = await prisma?.order.create({
-      data: {
-        email,
-        name,
-        status: input.adminCreated ? "Pending payment" : "PENDING",
-        subtotal: stripeLineItems.reduce(
-          (acc, cur) => acc + cur.price_data.unit_amount * cur.quantity,
-          0,
-        ),
-      },
+    const order = await db.$transaction(async (tx) => {
+      const createdOrder = await tx.order.create({
+        data: {
+          email,
+          name,
+          status: input.adminCreated ? "Pending payment" : "PENDING",
+          subtotal: stripeLineItems.reduce(
+            (acc, cur) => acc + cur.price_data.unit_amount * cur.quantity,
+            0,
+          ),
+        },
+      });
+
+      for (const listing of listingsPurchased) {
+        const requestedQuantity =
+          items.find((item) => item.itemId === listing.id)?.quantity ?? 0;
+        if (requestedQuantity <= 0) continue;
+
+        const orderItem = await tx.orderItem.create({
+          data: {
+            listingId: listing.id,
+            quantity: requestedQuantity,
+            orderId: createdOrder.id,
+            unitPrice: listing.price,
+          },
+        });
+
+        const requirements = calculateRequiredPartCounts(
+          listing.components.map((component) => ({
+            partDetailId: component.partDetailId,
+            quantity: component.quantity,
+          })),
+          requestedQuantity,
+        );
+
+        const reservationIds: string[] = [];
+        for (const requirement of requirements) {
+          const candidates = await tx.part.findMany({
+            where: {
+              allocatedToListingId: listing.id,
+              partDetailsId: requirement.partDetailId,
+              status: PartStatus.AVAILABLE,
+            },
+            orderBy: {
+              createdAt: "asc",
+            },
+            take: requirement.required,
+            select: {
+              id: true,
+            },
+          });
+
+          if (candidates.length < requirement.required) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `${listing.title} is out of stock for requested quantity.`,
+            });
+          }
+
+          reservationIds.push(...candidates.map((candidate) => candidate.id));
+        }
+
+        if (reservationIds.length > 0) {
+          const reservedAt = new Date();
+          const reservationUpdate = await tx.part.updateMany({
+            where: {
+              id: {
+                in: reservationIds,
+              },
+              status: PartStatus.AVAILABLE,
+            },
+            data: {
+              status: PartStatus.RESERVED,
+              reservedAt,
+            },
+          });
+
+          if (reservationUpdate.count !== reservationIds.length) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "Inventory changed during checkout. Please retry your order.",
+            });
+          }
+
+          await tx.orderItemPart.createMany({
+            data: reservationIds.map((partId) => ({
+              orderItemId: orderItem.id,
+              partId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      return createdOrder;
     });
 
-    for (const item of listingsPurchased) {
-      const itemProvided = items.find(
-        (itemQuery) => itemQuery.itemId === item.id,
-      );
-      const orderItem = await prisma?.orderItem.create({
-        data: {
-          listingId: item.id,
-          quantity: itemProvided!.quantity,
-          orderId: order?.id,
-        },
-      });
-      await prisma?.order.update({
-        where: {
-          id: order?.id,
-        },
-        data: {
-          orderItems: {
-            connect: {
-              id: orderItem?.id,
-            },
-          },
-        },
-      });
-    }
+    await syncEbayQuantitiesForListings(items.map((item) => item.itemId)).catch(
+      (error) => {
+        console.error("eBay quantity sync failed after reservation", error);
+      },
+    );
 
     const session = await stripe.checkout.sessions.create({
       customer: customer.id,
       payment_method_types: ["card", "afterpay_clearpay", "link"],
+      expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
       phone_number_collection: {
         enabled: true,
       },

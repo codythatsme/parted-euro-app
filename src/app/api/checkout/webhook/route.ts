@@ -1,6 +1,9 @@
 import { type NextRequest } from "next/server";
+import { PartStatus } from "@prisma/client";
 import Stripe from "stripe";
 import { createInvoiceFromStripeEvent } from "~/server/xero/createInvoice";
+import { db } from "~/server/db";
+import { syncEbayQuantitiesForListings } from "~/server/lib/ebay-sync";
 
 export const maxDuration = 30;
 
@@ -32,24 +35,116 @@ export const POST = async (req: NextRequest) => {
 
   // Handle the event
   switch (event.type) {
-    case "checkout.session.completed":
+    case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+      const orderId = session.metadata?.orderId;
+      if (!orderId) {
+        return new Response("Missing orderId metadata", { status: 400 });
+      }
 
-      // Handle the completed checkout session
-      console.log(`Payment successful for session: ${session.id}`);
+      const orderItems = await db.orderItem.findMany({
+        where: {
+          orderId,
+        },
+        select: {
+          listingId: true,
+          allocatedParts: {
+            select: {
+              partId: true,
+            },
+          },
+        },
+      });
 
-      const lineItems = await stripe.checkout.sessions.listLineItems(
-        session.id,
-        {
-          expand: ["data.price.product"],
+      const reservedPartIds = orderItems.flatMap((item) =>
+        item.allocatedParts.map((part) => part.partId),
+      );
+
+      if (reservedPartIds.length > 0) {
+        await db.part.updateMany({
+          where: {
+            id: {
+              in: reservedPartIds,
+            },
+            status: PartStatus.RESERVED,
+          },
+          data: {
+            status: PartStatus.SOLD,
+            reservedAt: null,
+          },
+        });
+      }
+
+      await syncEbayQuantitiesForListings(orderItems.map((item) => item.listingId)).catch(
+        (error) => {
+          console.error("eBay quantity sync failed after checkout completion", error);
         },
       );
 
-      // TODO: Fulfill the order here - update database, send confirmation emails, etc.
-      // For example:
-      await createInvoiceFromStripeEvent(session, lineItems.data);
+      const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
+        expand: ["data.price.product"],
+      });
 
+      await createInvoiceFromStripeEvent(session, lineItems.data);
       break;
+    }
+    case "checkout.session.expired": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const orderId = session.metadata?.orderId;
+      if (!orderId) {
+        return new Response("Missing orderId metadata", { status: 400 });
+      }
+
+      const orderItems = await db.orderItem.findMany({
+        where: {
+          orderId,
+        },
+        select: {
+          listingId: true,
+          allocatedParts: {
+            select: {
+              partId: true,
+            },
+          },
+        },
+      });
+
+      const reservedPartIds = orderItems.flatMap((item) =>
+        item.allocatedParts.map((part) => part.partId),
+      );
+
+      if (reservedPartIds.length > 0) {
+        await db.part.updateMany({
+          where: {
+            id: {
+              in: reservedPartIds,
+            },
+            status: PartStatus.RESERVED,
+          },
+          data: {
+            status: PartStatus.AVAILABLE,
+            reservedAt: null,
+          },
+        });
+      }
+
+      await syncEbayQuantitiesForListings(orderItems.map((item) => item.listingId)).catch(
+        (error) => {
+          console.error("eBay quantity sync failed after checkout expiry", error);
+        },
+      );
+
+      await db.order.updateMany({
+        where: {
+          id: orderId,
+          status: "PENDING",
+        },
+        data: {
+          status: "EXPIRED",
+        },
+      });
+      break;
+    }
     default:
       // Unexpected event type
       console.log(`Unhandled event type: ${event.type}`);

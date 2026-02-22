@@ -16,6 +16,9 @@ import type {
 import { CategoryType, TimeDurationUnit } from "ebay-api/lib/enums";
 import { db } from "~/server/db";
 import { type AuthToken } from "ebay-api/auth/oAuth2.js";
+import { calculateRequiredPartCounts, calculateStock } from "~/server/lib/stock";
+import { PartStatus } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 
 type FulfillmentPolicyResponse = {
   fulfillmentPolicies: {
@@ -167,6 +170,58 @@ const initEbay = async () => {
   ebay.OAuth2.setCredentials(tokenSet);
 };
 
+const getListingStockSnapshot = async (listingId: string) => {
+  const listing = await db.listing.findUnique({
+    where: {
+      id: listingId,
+    },
+    select: {
+      id: true,
+      title: true,
+      listedOnEbay: true,
+      ebayOfferId: true,
+      components: {
+        select: {
+          partDetailId: true,
+          quantity: true,
+          partDetail: {
+            select: {
+              partNo: true,
+            },
+          },
+        },
+      },
+      allocatedParts: {
+        select: {
+          partDetailsId: true,
+          status: true,
+        },
+      },
+    },
+  });
+
+  if (!listing) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Listing not found",
+    });
+  }
+
+  const quantity = calculateStock({
+    components: listing.components.map((component) => ({
+      partDetailId: component.partDetailId,
+      quantity: component.quantity,
+    })),
+    inventoryParts: listing.allocatedParts,
+  });
+
+  return {
+    listing,
+    quantity,
+    primaryPartNo: listing.components[0]?.partDetail.partNo ?? "",
+  };
+};
+
 export const ebayRouter = createTRPCRouter({
   // Auth functions
   authenticate: adminProcedure.mutation(async ({ ctx }) => {
@@ -263,11 +318,11 @@ export const ebayRouter = createTRPCRouter({
           .max(80, { message: "Title must be less than 80 characters" }),
         description: z.string(),
         price: z.number(),
-        partNo: z.string().trim(),
+        partNo: z.string().trim().optional(),
         condition: z.string(),
         conditionDescription: z.string(),
         images: z.array(z.string()),
-        quantity: z.number().default(1),
+        quantity: z.number().optional(),
         listingId: z.string(),
         categoryId: z.string(),
         domesticShipping: z.number(),
@@ -281,6 +336,15 @@ export const ebayRouter = createTRPCRouter({
       console.log(input);
       console.log("====================INPUT=====================");
       await initEbay();
+      const snapshot = await getListingStockSnapshot(input.listingId);
+      const quantity = snapshot.quantity;
+      const derivedPartNo = snapshot.primaryPartNo || input.partNo || "";
+      if (!derivedPartNo) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Listing must have at least one component with a part number.",
+        });
+      }
 
       const random = Math.floor(100000 + Math.random() * 900000);
       let fulfillmentPolicy;
@@ -356,7 +420,7 @@ export const ebayRouter = createTRPCRouter({
           {
             availability: {
               shipToLocationAvailability: {
-                quantity: input.quantity,
+                quantity,
               },
             },
             condition: input.conditionDescription as Condition,
@@ -367,7 +431,7 @@ export const ebayRouter = createTRPCRouter({
               aspects: {
                 Brand: ["BMW"],
               },
-              mpn: input.partNo,
+              mpn: derivedPartNo,
               brand: "BMW",
               imageUrls: input.images,
             },
@@ -388,7 +452,7 @@ export const ebayRouter = createTRPCRouter({
         sku: `${input.listingId} ${random}`,
         marketplaceId: "EBAY_AU" as Marketplace,
         format: "FIXED_PRICE" as FormatType,
-        availableQuantity: input.quantity,
+        availableQuantity: quantity,
         categoryId: input.categoryId, //id of vehicle parts and accs
         listingDescription,
         listingPolicies: {
@@ -423,6 +487,210 @@ export const ebayRouter = createTRPCRouter({
       });
       return {
         publishOffer,
+        quantity,
+      };
+    }),
+  syncListingQuantity: adminProcedure
+    .input(
+      z.object({
+        listingId: z.string(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      await initEbay();
+      const snapshot = await getListingStockSnapshot(input.listingId);
+      const offerId = snapshot.listing.ebayOfferId;
+      if (!snapshot.listing.listedOnEbay || !offerId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Listing is not linked to an eBay offer.",
+        });
+      }
+
+      const offer = await ebay.sell.inventory.getOffer(offerId);
+      offer.availableQuantity = snapshot.quantity;
+      await ebay.sell.inventory.updateOffer(offerId, offer);
+
+      return {
+        listingId: input.listingId,
+        offerId,
+        quantity: snapshot.quantity,
+      };
+    }),
+  ingestEbayOrder: adminProcedure
+    .input(
+      z.object({
+        buyerName: z.string().default("eBay Buyer"),
+        buyerEmail: z.string().default("ebay-order@partedeuro.local"),
+        items: z.array(
+          z.object({
+            listingId: z.string(),
+            quantity: z.number().int().positive(),
+          }),
+        ),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const listingIds = input.items.map((item) => item.listingId);
+      const listings = await ctx.db.listing.findMany({
+        where: {
+          id: {
+            in: listingIds,
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+          price: true,
+          listedOnEbay: true,
+          ebayOfferId: true,
+          components: {
+            select: {
+              partDetailId: true,
+              quantity: true,
+            },
+          },
+          allocatedParts: {
+            select: {
+              partDetailsId: true,
+              status: true,
+            },
+          },
+        },
+      });
+      const listingById = new Map(listings.map((listing) => [listing.id, listing]));
+
+      for (const item of input.items) {
+        const listing = listingById.get(item.listingId);
+        if (!listing) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Listing ${item.listingId} not found`,
+          });
+        }
+
+        const stock = calculateStock({
+          components: listing.components,
+          inventoryParts: listing.allocatedParts,
+        });
+        if (stock < item.quantity) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `${listing.title} is out of stock for requested quantity.`,
+          });
+        }
+      }
+
+      const created = await ctx.db.$transaction(async (tx) => {
+        const subtotal = input.items.reduce((sum, item) => {
+          const listing = listingById.get(item.listingId);
+          return sum + (listing?.price ?? 0) * item.quantity;
+        }, 0);
+
+        const order = await tx.order.create({
+          data: {
+            name: input.buyerName,
+            email: input.buyerEmail,
+            status: "PAID",
+            subtotal: Math.round(subtotal * 100),
+          },
+        });
+
+        for (const item of input.items) {
+          const listing = listingById.get(item.listingId);
+          if (!listing) continue;
+
+          const orderItem = await tx.orderItem.create({
+            data: {
+              orderId: order.id,
+              listingId: listing.id,
+              quantity: item.quantity,
+              unitPrice: listing.price,
+            },
+          });
+
+          const requirements = calculateRequiredPartCounts(
+            listing.components.map((component) => ({
+              partDetailId: component.partDetailId,
+              quantity: component.quantity,
+            })),
+            item.quantity,
+          );
+          const partIds: string[] = [];
+
+          for (const requirement of requirements) {
+            const candidates = await tx.part.findMany({
+              where: {
+                allocatedToListingId: listing.id,
+                partDetailsId: requirement.partDetailId,
+                status: PartStatus.AVAILABLE,
+              },
+              orderBy: {
+                createdAt: "asc",
+              },
+              take: requirement.required,
+              select: {
+                id: true,
+              },
+            });
+            if (candidates.length < requirement.required) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `${listing.title} is out of stock for requested quantity.`,
+              });
+            }
+            partIds.push(...candidates.map((candidate) => candidate.id));
+          }
+
+          if (partIds.length > 0) {
+            const updated = await tx.part.updateMany({
+              where: {
+                id: {
+                  in: partIds,
+                },
+                status: PartStatus.AVAILABLE,
+              },
+              data: {
+                status: PartStatus.SOLD,
+                reservedAt: null,
+              },
+            });
+            if (updated.count !== partIds.length) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: "Inventory changed while ingesting eBay order.",
+              });
+            }
+            await tx.orderItemPart.createMany({
+              data: partIds.map((partId) => ({
+                orderItemId: orderItem.id,
+                partId,
+              })),
+              skipDuplicates: true,
+            });
+          }
+        }
+
+        return order;
+      });
+
+      // Best effort quantity sync for affected listings.
+      await Promise.allSettled(
+        listings
+          .filter((listing) => listing.listedOnEbay && !!listing.ebayOfferId)
+          .map(async (listing) => {
+            const snapshot = await getListingStockSnapshot(listing.id);
+            const offerId = listing.ebayOfferId;
+            if (!offerId) return;
+            const offer = await ebay.sell.inventory.getOffer(offerId);
+            offer.availableQuantity = snapshot.quantity;
+            await ebay.sell.inventory.updateOffer(offerId, offer);
+          }),
+      );
+
+      return {
+        success: true,
+        orderId: created.id,
       };
     }),
   getFulfillmentPolicies: adminProcedure.query(async ({ ctx }) => {

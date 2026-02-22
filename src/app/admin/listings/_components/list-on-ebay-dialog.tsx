@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -115,14 +115,14 @@ export function ListOnEbayDialog({
     useState<boolean>(false);
   const [fulfillmentPolicy, setFulfillmentPolicy] =
     useState<FulfillmentPolicyType | null>(null);
-  const [quantity, setQuantity] = useState<number>(1);
+  const [quantity, setQuantity] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validated, setValidated] = useState<boolean>(false);
   const utils = api.useUtils();
 
   // Reset form function
   const resetForm = () => {
-    const defaultTitle = `${listing.title} ${listing.parts[0]?.partDetails.partNo ?? ""}`;
+    const defaultTitle = `${listing.title} ${listing.components[0]?.partDetail.partNo ?? ""}`;
     setTitle(defaultTitle);
     setDescription(listing.description);
     setCondition(listing.condition);
@@ -136,7 +136,7 @@ export function ListOnEbayDialog({
     setInternationalShipping(0);
     setCreateNewFulfillmentPolicy(false);
     setFulfillmentPolicy(null);
-    setQuantity(1);
+    setQuantity(listing.stock ?? 0);
     setValidated(false);
   };
 
@@ -199,24 +199,9 @@ export function ListOnEbayDialog({
     }
   };
 
-  // Calculate quantity based on parts
+  // Calculate quantity from component-backed stock.
   useEffect(() => {
-    // Check if all parts have the same part number
-    const allSamePartNo = listing.parts.every((part) => {
-      const partNumber = listing.parts[0]?.partDetails.partNo;
-      return part.partDetails.partNo === partNumber;
-    });
-
-    if (allSamePartNo) {
-      // Sum up quantities of all parts with the same part number
-      const totalQuantity = listing.parts.reduce((total, part) => {
-        return total + part.quantity; // Use the actual quantity from each part
-      }, 0);
-      setQuantity(totalQuantity);
-    } else {
-      // If parts have different part numbers, default to 1
-      setQuantity(1);
-    }
+    setQuantity(listing.stock ?? 0);
   }, [listing]);
 
   // Form validation
@@ -244,40 +229,17 @@ export function ListOnEbayDialog({
 
   // Create HTML table for part fitment
   const makeTableHTML = () => {
-    // Deduplicate parts based on car
-    const uniqueParts = listing.parts.reduce(
-      (acc: typeof listing.parts, cur) => {
-        const existingPart = acc.find(
-          (part) =>
-            part.partDetails.cars?.[0] &&
-            cur.partDetails.cars?.[0] &&
-            part.partDetails.cars[0]?.id === cur.partDetails.cars[0]?.id,
-        );
+    const uniqueCars = listing.components
+      .flatMap((component) => component.partDetail.cars ?? [])
+      .filter((car, index, self) => index === self.findIndex((x) => x.id === car.id));
 
-        if (!existingPart) {
-          acc.push(cur);
-        }
-        return acc;
-      },
-      [],
-    );
-
-    // Generate HTML rows
-    return uniqueParts
-      .map((part) => {
-        if (!part.partDetails.cars) return "";
-
-        return part.partDetails.cars
-          .map(
-            (car: { series?: string; generation?: string; model?: string }) => {
-              return `<tr style="padding:1rem; border-bottom: 1px solid #ddd">
+    return uniqueCars
+      .map((car: { series?: string; generation?: string; model?: string }) => {
+        return `<tr style="padding:1rem; border-bottom: 1px solid #ddd">
           <td>${car.series ?? ""}</td>
           <td>${car.generation ?? ""}</td>
           <td>${car.model ?? ""}</td>
         </tr>`;
-            },
-          )
-          .join("");
       })
       .join("");
   };
@@ -298,7 +260,7 @@ export function ListOnEbayDialog({
         condition: condition,
         conditionDescription: ebayCondition,
         quantity: quantity,
-        partNo: listing.parts[0]?.partDetails.partNo ?? "",
+        partNo: listing.components[0]?.partDetail.partNo ?? "",
         categoryId: categoryId,
         domesticShipping: domesticShipping,
         internationalShipping: internationalShipping,
@@ -519,7 +481,7 @@ export function ListOnEbayDialog({
               type="number"
               value={quantity || undefined}
               placeholder="Quantity"
-              onChange={(e) => setQuantity(Number(e.target.value))}
+              readOnly
             />
           </div>
 

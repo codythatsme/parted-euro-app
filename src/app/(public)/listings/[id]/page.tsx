@@ -46,11 +46,9 @@ export default async function ListingPage({ params }: Props) {
     notFound();
   }
 
-  const { title, description, price, images, parts } = listing;
-
-  // Calculate total quantity by summing all parts
-  const quantity =
-    parts?.reduce((acc, part) => acc + (part.quantity ?? 0), 0) ?? 0;
+  const { title, description, price, images, components, allocatedParts, stock } =
+    listing;
+  const quantity = stock ?? 0;
   const inStock = quantity > 0;
 
   // Format images to ensure consistent structure
@@ -63,24 +61,11 @@ export default async function ListingPage({ params }: Props) {
         }))
       : [];
 
-  // Deduplicate parts by partNo for the first part reference
-  const uniqueParts = parts?.reduce(
-    (acc, part) => {
-      if (
-        !acc.some((p) => p.partDetails?.partNo === part.partDetails?.partNo)
-      ) {
-        acc.push(part);
-      }
-      return acc;
-    },
-    [] as typeof parts,
-  );
+  const firstComponent = components?.[0];
 
-  const firstPart = uniqueParts?.[0];
-
-  // Extract all compatible cars from the parts
+  // Extract all compatible cars from components.
   const compatibleCars =
-    parts?.flatMap((part) => part.partDetails?.cars || []) || [];
+    components?.flatMap((component) => component.partDetail?.cars ?? []) ?? [];
 
   // Deduplicate cars by id
   const uniqueCompatibleCars = compatibleCars.filter(
@@ -154,12 +139,12 @@ export default async function ListingPage({ params }: Props) {
                 listingImage={formattedImages[0]?.url}
                 quantity={quantity}
                 dimensions={{
-                  length: firstPart?.partDetails?.length ?? null,
-                  width: firstPart?.partDetails?.width ?? null,
-                  height: firstPart?.partDetails?.height ?? null,
-                  weight: firstPart?.partDetails?.weight ?? null,
+                  length: firstComponent?.partDetail?.length ?? null,
+                  width: firstComponent?.partDetail?.width ?? null,
+                  height: firstComponent?.partDetail?.height ?? null,
+                  weight: firstComponent?.partDetail?.weight ?? null,
                 }}
-                vin={firstPart?.donor?.vin}
+                vin={allocatedParts?.[0]?.donor?.vin}
               />
             ) : (
               <div className="rounded-md bg-red-100 px-6 py-4 text-center text-red-700">
@@ -170,7 +155,7 @@ export default async function ListingPage({ params }: Props) {
         </div>
       </div>
       <Separator className="my-8" />
-      {parts && parts.length > 0 && (
+      {components && components.length > 0 && (
         <div className="mt-6">
           <h3 className="mb-2 text-lg font-semibold">Parts included</h3>
           <div className="overflow-x-auto rounded-md border">
@@ -198,16 +183,16 @@ export default async function ListingPage({ params }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border bg-background">
-                {uniqueParts?.map((part, index) => (
-                  <tr key={index} className="hover:bg-muted/50">
+                {components?.map((component) => (
+                  <tr key={component.id} className="hover:bg-muted/50">
                     <td className="whitespace-nowrap px-4 py-3 text-sm">
-                      {part.partDetails?.name ?? "—"}
+                      {component.partDetail?.name ?? "—"}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm">
-                      {part.partDetails?.partNo ?? "—"}
+                      {component.partDetail?.partNo ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      {part.partDetails?.alternatePartNumbers ?? "—"}
+                      {component.partDetail?.alternatePartNumbers ?? "—"}
                     </td>
                   </tr>
                 ))}

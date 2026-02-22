@@ -42,6 +42,31 @@ export const ordersRouter = createTRPCRouter({
                   },
                 },
               },
+              allocatedParts: {
+                include: {
+                  part: {
+                    include: {
+                      donor: {
+                        select: {
+                          vin: true,
+                        },
+                      },
+                      inventoryLocation: {
+                        select: {
+                          id: true,
+                          name: true,
+                        },
+                      },
+                      partDetails: {
+                        select: {
+                          partNo: true,
+                          name: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -64,15 +89,6 @@ export const ordersRouter = createTRPCRouter({
           include: {
             listing: {
               include: {
-                parts: {
-                  select: {
-                    partDetails: {
-                      select: {
-                        partNo: true,
-                      },
-                    },
-                  },
-                },
                 images: {
                   select: {
                     url: true,
@@ -81,6 +97,31 @@ export const ordersRouter = createTRPCRouter({
                     order: "asc",
                   },
                   take: 1,
+                },
+              },
+            },
+            allocatedParts: {
+              include: {
+                part: {
+                  include: {
+                    donor: {
+                      select: {
+                        vin: true,
+                      },
+                    },
+                    inventoryLocation: {
+                      select: {
+                        id: true,
+                        name: true,
+                      },
+                    },
+                    partDetails: {
+                      select: {
+                        partNo: true,
+                        name: true,
+                      },
+                    },
+                  },
                 },
               },
             },

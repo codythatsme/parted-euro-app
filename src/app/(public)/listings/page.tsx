@@ -541,11 +541,7 @@ export default function ListingsPage() {
           {listings.data && listings.data.listings.length > 0 && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {listings.data.listings.map((listing) => {
-                const totalQuantity =
-                  listing.parts?.reduce(
-                    (acc, p) => acc + (p.quantity ?? 0),
-                    0,
-                  ) ?? 0;
+                const totalQuantity = listing.stock ?? 0;
                 const inStock = totalQuantity > 0;
 
                 return (

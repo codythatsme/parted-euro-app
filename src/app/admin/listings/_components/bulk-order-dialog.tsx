@@ -48,7 +48,7 @@ export function BulkOrderDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const utils = api.useUtils();
-  const bulkReduceMutation = api.listings.bulkReduceQuantities.useMutation({
+  const bulkReduceMutation = api.listings.markPartsSold.useMutation({
     onSuccess: async () => {
       await utils.listings.getAllAdmin.invalidate();
     },
@@ -112,7 +112,7 @@ export function BulkOrderDialog({
       }));
       if (items.length === 0) return;
       await bulkReduceMutation.mutateAsync({ items });
-      toast.success("eBay order created. Quantities updated");
+      toast.success("eBay order created. Inventory marked sold.");
       onOpenChange(false);
     } catch {
       toast.error("Failed to create eBay order");

@@ -101,19 +101,21 @@ interface PartImage {
 }
 
 // Define interfaces for API requests
-interface CreateInventoryInput {
+type CreateInventoryInput = {
   partDetailsId: string;
   donorVin?: string | null;
   inventoryLocationId?: string | null;
   variant?: string | null;
-  quantity: number;
+  count?: number;
+  status?: "AVAILABLE" | "RESERVED" | "SOLD" | "RETURNED";
+  allocatedToListingId?: string | null;
   images?: ImageItem[];
-}
+};
 
-interface UpdateInventoryInput {
+type UpdateInventoryInput = {
   id: string;
   data: CreateInventoryInput;
-}
+};
 
 // Sortable image component
 const SortableImage = ({
@@ -183,7 +185,7 @@ const formSchema = z
     donorVin: z.string().optional().nullable(),
     inventoryLocationId: z.string().optional().nullable(),
     variant: z.string().optional().nullable(),
-    quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+    count: z.coerce.number().int().min(1, "Count must be at least 1"),
     images: z
       .array(
         z.object({
@@ -296,7 +298,7 @@ export function InventoryForm({
       donorVin: defaultValues?.donorVin ?? null,
       inventoryLocationId: defaultValues?.inventoryLocationId ?? null,
       variant: defaultValues?.variant ?? null,
-      quantity: defaultValues?.quantity ?? 1,
+      count: 1,
       isNewPart: false,
       partNo: "",
       alternatePartNumbers: "",
@@ -504,7 +506,7 @@ export function InventoryForm({
         donorVin: defaultValues?.donorVin ?? null,
         inventoryLocationId: defaultValues?.inventoryLocationId ?? null,
         variant: defaultValues?.variant ?? null,
-        quantity: defaultValues?.quantity ?? 1,
+        count: 1,
         isNewPart: false,
         partNo: "",
         alternatePartNumbers: "",
@@ -654,7 +656,7 @@ export function InventoryForm({
               donorVin: values.donorVin,
               inventoryLocationId: values.inventoryLocationId,
               variant: values.variant,
-              quantity: values.quantity,
+              count: values.count,
               images: imagesWithOrder,
             };
 
@@ -744,7 +746,6 @@ export function InventoryForm({
                 donorVin: values.donorVin,
                 inventoryLocationId: values.inventoryLocationId,
                 variant: values.variant,
-                quantity: values.quantity,
                 images: imagesWithOrder,
               },
             };
@@ -756,7 +757,7 @@ export function InventoryForm({
               donorVin: values.donorVin,
               inventoryLocationId: values.inventoryLocationId,
               variant: values.variant,
-              quantity: values.quantity,
+              count: values.count,
               images: imagesWithOrder,
             };
             await createInventoryMutation.mutateAsync(createData);
@@ -1250,10 +1251,10 @@ export function InventoryForm({
 
                     <FormField
                       control={form.control}
-                      name="quantity"
+                      name="count"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Quantity*</FormLabel>
+                          <FormLabel>Create Multiple</FormLabel>
                           <FormControl>
                             <Input type="number" min={1} {...field} />
                           </FormControl>
@@ -1261,6 +1262,23 @@ export function InventoryForm({
                         </FormItem>
                       )}
                     />
+
+                    {defaultValues && (
+                      <div className="grid grid-cols-1 gap-2">
+                        <div className="text-xs text-muted-foreground">
+                          Status:{" "}
+                          <span className="font-medium text-foreground">
+                            {defaultValues.status}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Allocated To:{" "}
+                          <span className="font-medium text-foreground">
+                            {defaultValues.allocatedToListing?.title ?? "Unallocated"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     <FormField
                       control={form.control}
