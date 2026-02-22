@@ -170,7 +170,7 @@ model OrderItem {
   id             String          @id @default(cuid())
   order          Order           @relation(fields: [orderId], references: [id])
   orderId        String
-  listing        Listing         @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing        Listing         @relation(fields: [listingId], references: [id], onDelete: Restrict)
   listingId      String
   quantity       Int
   createdAt      DateTime        @default(now())
@@ -244,7 +244,7 @@ Run: `bunx prisma migrate dev --name add-inventory-restructure-fields`
 
 ### Phase 2: Data Migration Script
 
-Standalone script at `scripts/migrate-inventory-schema.ts`. Must be **idempotent** (safe to re-run). Run via `bun run scripts/migrate-inventory-schema.ts`.
+Standalone script at `scripts/migrate-inventory-schema.ts`. This is a **single-run migration** in v1: take a mandatory DB snapshot first, then execute once in production. Drift from live writes is accepted and reconciled manually from migration logs. Run via `bun run scripts/migrate-inventory-schema.ts`.
 
 #### Step A: Expand Part records with quantity > 1
 
@@ -281,7 +281,7 @@ Note: Component quantity defaults to 1. For actual bundles that require N of a p
 
 For each Part connected to Listings via old m2m:
 - If connected to 1 listing: set `listingId = that listing`
-- If connected to multiple listings: pick the first **active** listing (or first if none active). Log a warning for manual review.
+- If connected to multiple listings: leave `listingId = null` and log for manual review
 - If connected to 0 listings: leave listingId null (unallocated inventory)
 
 ```
@@ -289,9 +289,8 @@ for each Part with m2m listings:
   if listings.length == 1:
     part.listingId = listings[0].id
   else if listings.length > 1:
-    pick first active listing (or first if none active)
-    part.listingId = chosen.id
-    log warning: "Part {id} was on {n} listings, allocated to {chosen.id}"
+    part.listingId = null
+    log warning: "Part {id} was on {n} listings, left unallocated for manual review"
   // 0 listings: leave null
 ```
 
@@ -326,6 +325,7 @@ This is best-effort. Log all OrderItems that couldn't be fully linked. Traceabil
 All code changes detailed in section below. Deploy after data migration is verified.
 
 During this phase, code reads/writes the NEW fields only. Old fields (quantity, sold, m2m) are still in schema but unused.
+Cutover strategy is a hard, single release and any issues are handled fix-forward (no rollback workflow in v1).
 
 ### Phase 4: Remove Deprecated Fields
 
@@ -362,13 +362,13 @@ Currently only handles `checkout.session.completed`. Changes:
 
 - **`checkout.session.completed` handler:** Find RESERVED Parts via OrderItemParts for this order -> set `status = SOLD`, clear `reservedAt`
 - **NEW `checkout.session.expired` handler:** Find RESERVED Parts via OrderItemParts for this order -> set `status = AVAILABLE`, clear `reservedAt`. `listingId` stays (item is still allocated to listing, just not reserved for a buyer).
-- **Scheduled cleanup** (belt-and-suspenders): cron/scheduled function that finds Parts with `status = RESERVED AND reservedAt < NOW() - 45min` and reverts to AVAILABLE. Catches anything the webhook misses (network failures, Stripe outages).
+- **Scheduled cleanup** (belt-and-suspenders): run hourly; find Parts with `status = RESERVED AND reservedAt < NOW() - 60min` and revert to AVAILABLE. Catches anything the webhook misses (network failures, Stripe outages).
 
 #### `src/server/xero/createInvoice.ts`
 
 **`createInvoiceFromStripeEvent` (~line 254-287):**
-- Replace the existing FIFO quantity-decrement loop with: find RESERVED Parts via OrderItemPart join, mark them SOLD
-- This is simpler than current code -- no more manual quantity arithmetic, no more nested update-through-listing pattern
+- Remove inventory state mutation from invoice flow. Stripe webhook is authoritative for RESERVED -> SOLD transitions.
+- Keep invoice creation/reporting behavior only (read order + allocated part state for accounting output).
 
 #### `src/server/api/routers/inventory.ts`
 
@@ -385,7 +385,7 @@ Currently only handles `checkout.session.completed`. Changes:
 - **getListing** (public): Replace `parts` include with `components` include for bill-of-materials display + computed stock count.
 - **searchListings (~line 465)**: Stock calculation from new model instead of summing `parts.quantity`.
 - **getAllAdmin**: Include components and per-component inventory allocation counts.
-- **delete**: Parts unallocated automatically via `onDelete: SetNull` on the Part.listingId FK.
+- **delete/retire**: Disallow hard delete in normal workflow. Use `active = false` to retire listings. Any true delete path must be blocked if OrderItems exist (retention-safe behavior).
 - **bulkReduceQuantities (~line 400)**: Replace with new mutation that marks specific Parts as SOLD and creates OrderItemPart records.
 - **New: `allocateInventory`** -- admin manually assigns/unassigns Parts to a Listing
 - **New: `getStock`** -- returns stock count for a listing using `calculateStock()`
@@ -403,8 +403,9 @@ Currently only handles `checkout.session.completed`. Changes:
 #### `src/server/api/routers/ebay.ts`
 
 - **createListing** (~line 258): Quantity from `calculateStock()`. Part number from first ListingComponent's partDetail.
-- **bulkReduceQuantities**: Replace with new mutation that marks specific Parts as SOLD and creates OrderItemPart records.
+- **eBay order ingestion**: Create local Order + OrderItems, then allocate/mark Parts SOLD through the same internal path as web checkout (traceability parity).
 - **Eager sync**: On inventory status changes for listings with `listedOnEbay = true`, push quantity update to eBay immediately.
+- **Sync failure policy**: Local inventory remains committed; log/alert and allow manual admin retry for failed eBay quantity updates.
 
 ### New Shared Utility
 
@@ -488,7 +489,7 @@ Since `relationMode = "prisma"` means no DB-level locks, there's a small window 
 
 **30-minute expiry** (pass `expires_at` on Stripe session creation). Belt-and-suspenders cleanup:
 1. `checkout.session.expired` webhook reverts RESERVED -> AVAILABLE
-2. Scheduled job catches anything webhook misses (finds `reservedAt < NOW() - 45min`)
+2. Scheduled job runs hourly and catches anything webhook misses (finds `reservedAt < NOW() - 60min`)
 
 ### Bundle Partial Availability
 
@@ -496,17 +497,18 @@ Stock = min across components. If LEFT_HL has 3 available and RIGHT_HL has 0, st
 
 ### Returns
 
-Admin action: set `Part.status = RETURNED`. After inspection, admin moves to AVAILABLE. OrderItemPart records remain for audit trail. RETURNED parts don't count toward stock (not AVAILABLE).
+Admin action: set `Part.status = RETURNED`. After inspection, admin moves to AVAILABLE. OrderItemPart records remain for audit trail. RETURNED parts don't count toward stock (not AVAILABLE). v1 is status-only (no automatic Xero credit note flow).
 
 ### eBay Integration
 
 - eBay listing quantity comes from `calculateStock()`.
 - When local inventory changes for a listing with `listedOnEbay = true`, eagerly push quantity update to eBay.
-- eBay sales must go through the same allocation path: mark specific Parts as SOLD, create OrderItemPart records.
+- eBay sales create local Order + OrderItem records and use the same allocation path: mark specific Parts as SOLD, create OrderItemPart records.
+- If eBay sync fails after local mutation, keep local state and recover via manual retry.
 
 ### Orphaned Parts
 
-`onDelete: SetNull` on Part.listingId ensures listing deletion unallocates parts (doesn't delete them). No manual unallocation step needed before deleting listings.
+`onDelete: SetNull` on `Part.listingId` ensures a true listing delete (if ever allowed) unallocates parts instead of deleting them. Standard v1 workflow uses listing retirement (`active = false`) rather than hard deletion.
 
 ### Image Cloning During Migration
 
@@ -536,14 +538,64 @@ These fields are removed in Phase 4. `OrderItem.unitPrice` captures listing pric
 | 4 | `soldPrice` on Part? | **No, remove** | `OrderItem.unitPrice` + derivable cost data is sufficient. |
 | 5 | eBay quantity sync? | **Eager** | On every inventory status change. Avoids drift. Simple at this volume. |
 | 6 | Historical order linking? | **Best-effort, accept gaps** | Step E links what it can. Log remainder. Full traceability only guaranteed forward. |
+| 7 | Cleanup strategy? | **Both webhook + scheduled cleanup** | Webhook handles normal expiry path; scheduled cleanup catches missed events. |
+| 8 | RETURNED flow in v1? | **Manual status only** | Keep workflow simple now; no automatic accounting side effects. |
+| 9 | eBay sales write path? | **Create local orders first** | Preserves full traceability and unified downstream reporting. |
+| 10 | Multi-listing part migration policy? | **Leave unallocated and review manually** | Avoids accidental wrong assignment at cutover. |
+| 11 | Bundle quantity migration policy? | **Default to 1, then manually correct** | Fastest migration with explicit post-cutover follow-up. |
+| 12 | Listing deletion policy? | **Soft-retire via `active=false`** | Protects historical order integrity and avoids accidental data loss. |
+| 13 | OrderItem->Listing FK behavior? | **Restrict deletion** | Enforces retention safety for historical order records. |
+| 14 | Cleanup cadence? | **Hourly** | Acceptable operational lag for this volume in v1. |
 
-## Remaining Unresolved Questions
+## Resolved by Interview (Final Policy Baseline)
 
-1. Cleanup: Stripe webhook only, cron only, or both? Both recommended but cron adds infra complexity -- start webhook-only?
-2. `RETURNED` flow: admin-only trigger? Auto-create Xero credit note?
-3. eBay sales: create Orders locally, or just mark Parts SOLD directly?
+- Stripe webhook is authoritative for `RESERVED -> SOLD`; invoice flow does not mutate inventory.
+- Checkout conflicts fail the whole checkout; no partial purchase behavior in v1.
+- Auto-allocation only pulls from AVAILABLE + unallocated (`listingId = null`) parts.
+- Listings can be created and kept active even when computed stock is `0`.
+- `OrderItem.unitPrice` is the app listing price captured at checkout creation time.
+- Migration is one-shot with mandatory snapshot, live execution allowed, and post-run manual drift cleanup accepted.
+- Historical linking skips ambiguous matches and logs manual follow-up queue.
 
 ---
+
+## Accepted Risk Register
+
+1. **Live migration drift risk** -- writes continue during migration; any drift is manually reconciled from migration logs and targeted queries.
+2. **Fix-forward-only operations** -- no rollback path in v1; defects are corrected with forward patches.
+3. **Bundle quantity temporary mismatch** -- migrated components default to quantity `1` until manual correction for known bundles.
+4. **Cleanup lag tolerance** -- if webhook is missed, hourly cleanup may leave items RESERVED longer.
+
+### Manual Reconciliation Procedures
+
+- **Multi-listing migration conflicts**: work through logged Part IDs with `listingId = null`, then allocate explicitly in admin.
+- **Ambiguous historical links**: keep unlinked `OrderItem`s in a review queue; backfill only when evidence is clear.
+- **Bundle quantity fixes**: review known bundle listings and update `ListingComponent.quantity` before high-volume sales windows.
+- **eBay sync failures**: retry from admin queue; do not mutate local inventory back to match remote drift.
+
+---
+
+## Dependency-Ordered Cutover Checklist
+
+1. **Pre-flight safeguards**
+   - Take mandatory full DB snapshot.
+   - Confirm migration logging is enabled for conflict queues (multi-listing Parts, ambiguous order links).
+2. **Schema and migration rollout**
+   - Deploy additive schema changes.
+   - Run one-shot data migration.
+   - Run post-migration integrity checks and export manual-review queues.
+3. **Runtime hard cutover**
+   - Deploy code that reads/writes new schema only.
+   - Enforce webhook-authoritative SOLD transitions and hourly cleanup job.
+   - Switch listing deletion behavior to soft-retire (`active=false`) with retention-safe restrictions.
+4. **Post-cutover reconciliation**
+   - Resolve unallocated multi-listing parts.
+   - Resolve ambiguous historical order links where possible.
+   - Correct known bundle component quantities.
+5. **Stability verification**
+   - Execute functional checklist (checkout, expiry, returns, eBay ingestion).
+   - Monitor eBay sync error queue and process manual retries.
+   - Confirm no contradictory policy remains in docs/router behavior.
 
 ## Verification
 
@@ -553,6 +605,7 @@ These fields are removed in Phase 4. `OrderItem.unitPrice` captures listing pric
 - Every Listing that had parts has at least one ListingComponent
 - Every Part with `sold=true` has `status=SOLD`
 - Spot-check 10-20 listings manually in admin
+- Review and clear migration logs for: multi-listing unallocated parts and ambiguous historical order links
 
 ### Functional Testing
 - Full checkout flow: add to cart -> checkout -> Stripe webhook -> verify Parts marked SOLD, OrderItemParts exist
@@ -575,7 +628,7 @@ These fields are removed in Phase 4. `OrderItem.unitPrice` captures listing pric
 |------|--------|
 | `prisma/schema.prisma` | Add PartStatus enum, ListingComponent, OrderItemPart, modify Part/Listing/OrderItem |
 | `src/server/lib/stock.ts` | **NEW** -- calculateStock utility |
-| `scripts/migrate-inventory-schema.ts` | **NEW** -- idempotent data migration script |
+| `scripts/migrate-inventory-schema.ts` | **NEW** -- one-shot data migration script with conflict logging |
 | `src/server/api/routers/checkout.ts` | Pre-checkout validation, reservation logic, 30min Stripe expiry |
 | `src/app/api/checkout/webhook/route.ts` | SOLD marking, expired session handler, scheduled cleanup |
 | `src/server/xero/createInvoice.ts` | Replace FIFO loop with OrderItemPart-based SOLD marking |
