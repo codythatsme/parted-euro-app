@@ -68,12 +68,34 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-interface PartFormProps {
+type ListingAssignmentCandidate = {
+  id: string;
+  title: string;
+};
+
+type InventoryCreateAssignment = {
+  createdPartIds: string[];
+  autoAssignedListingId: string | null;
+  needsSelection: boolean;
+  candidateListings: ListingAssignmentCandidate[];
+};
+
+type InventoryCreateResult = {
+  assignment: InventoryCreateAssignment;
+};
+
+type PendingListingAssignment = {
+  partNo: string;
+  createdPartIds: string[];
+  candidateListings: ListingAssignmentCandidate[];
+};
+
+type PartFormProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultValues?: Part;
   isEditing?: boolean;
-}
+};
 
 export function PartForm({
   open,
@@ -84,6 +106,9 @@ export function PartForm({
   const [selectedCars, setSelectedCars] = useState<string[]>([]);
   const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
   const [partTypesOpen, setPartTypesOpen] = useState(false);
+  const [pendingListingAssignment, setPendingListingAssignment] =
+    useState<PendingListingAssignment | null>(null);
+  const [selectedListingId, setSelectedListingId] = useState<string>("");
 
   // Fetch available cars and part types for selects
   const { data: carOptions = [] } = api.part.getAllCars.useQuery();
@@ -160,11 +185,62 @@ export function PartForm({
   const createMutation = api.part.create.useMutation();
   const updateMutation = api.part.update.useMutation();
   const createInventoryMutation = api.inventory.create.useMutation();
+  const allocateMutation = api.listings.allocateInventory.useMutation({
+    onError: (error) => {
+      toast.error(`Failed to assign inventory: ${error.message}`);
+    },
+  });
 
   const isSubmitting =
     createMutation.isPending ||
     updateMutation.isPending ||
-    createInventoryMutation.isPending;
+    createInventoryMutation.isPending ||
+    allocateMutation.isPending;
+
+  const handleInventoryCreateResult = (
+    result: InventoryCreateResult,
+    partNo: string,
+  ): boolean => {
+    if (!result.assignment.needsSelection) {
+      return false;
+    }
+
+    setPendingListingAssignment({
+      partNo,
+      createdPartIds: result.assignment.createdPartIds,
+      candidateListings: result.assignment.candidateListings,
+    });
+    setSelectedListingId(result.assignment.candidateListings[0]?.id ?? "");
+    return true;
+  };
+
+  const closeAssignmentPrompt = () => {
+    setPendingListingAssignment(null);
+    setSelectedListingId("");
+  };
+
+  const handleConfirmListingAssignment = async () => {
+    if (!pendingListingAssignment || !selectedListingId) {
+      toast.error("Please select a listing");
+      return;
+    }
+
+    try {
+      await allocateMutation.mutateAsync({
+        listingId: selectedListingId,
+        assignPartIds: pendingListingAssignment.createdPartIds,
+        unassignPartIds: [],
+      });
+      toast.success("Inventory assigned to listing");
+      closeAssignmentPrompt();
+      await Promise.all([
+        utils.inventory.getAll.invalidate(),
+        utils.listings.getAllAdmin.invalidate(),
+      ]);
+    } catch (error) {
+      console.error("Error assigning inventory to listing:", error);
+    }
+  };
 
   const onSubmit = async (values: FormValues) => {
     try {
@@ -205,13 +281,23 @@ export function PartForm({
       });
 
       if (values.createInventory) {
-        await createInventoryMutation.mutateAsync({
+        const inventoryResult = await createInventoryMutation.mutateAsync({
           partDetailsId: createdPart.partNo,
           donorVin: values.inventoryDonorVin,
           inventoryLocationId: values.inventoryLocationId,
           variant: values.inventoryVariant,
           count: values.inventoryCount,
         });
+
+        const needsAssignmentPrompt = handleInventoryCreateResult(
+          inventoryResult,
+          createdPart.partNo,
+        );
+        if (needsAssignmentPrompt) {
+          toast.success(
+            `Part ${createdPart.partNo} created. Choose which listing should receive the new inventory.`,
+          );
+        }
       }
 
       toast.success(
@@ -253,13 +339,14 @@ export function PartForm({
   const shouldCreateInventory = form.watch("createInventory");
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[1200px]">
-        <DialogHeader>
-          <DialogTitle>{isEditing ? "Edit Part" : "Add New Part"}</DialogTitle>
-        </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[1200px]">
+          <DialogHeader>
+            <DialogTitle>{isEditing ? "Edit Part" : "Add New Part"}</DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -643,25 +730,90 @@ export function PartForm({
               </div>
             )}
 
-            <DialogFooter className="pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                {isEditing ? "Update" : "Create"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  {isEditing ? "Update" : "Create"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!pendingListingAssignment}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            toast.message("Inventory left unallocated");
+            closeAssignmentPrompt();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Choose Listing for New Inventory</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Multiple active listings use part{" "}
+              <span className="font-medium text-foreground">
+                {pendingListingAssignment?.partNo}
+              </span>
+              . Select which listing should receive this inventory now.
+            </p>
+
+            <VirtualizedCombobox
+              options={(pendingListingAssignment?.candidateListings ?? []).map(
+                (listing) => ({
+                  value: listing.id,
+                  label: listing.title,
+                }),
+              )}
+              value={selectedListingId}
+              onChange={setSelectedListingId}
+              placeholder="Select a listing"
+              searchPlaceholder="Search listings..."
+              disabled={allocateMutation.isPending}
+            />
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                toast.message("Inventory left unallocated");
+                closeAssignmentPrompt();
+              }}
+              disabled={allocateMutation.isPending}
+            >
+              Leave Unallocated
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmListingAssignment}
+              disabled={allocateMutation.isPending || !selectedListingId}
+            >
+              {allocateMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Assign Inventory
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

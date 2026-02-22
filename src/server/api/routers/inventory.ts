@@ -2,6 +2,7 @@ import { z } from "zod";
 import { PartStatus } from "@prisma/client";
 import { adminProcedure, createTRPCRouter } from "../trpc";
 import { TRPCError } from "@trpc/server";
+import { syncEbayQuantityForListing } from "~/server/lib/ebay-sync";
 
 // Define inventory input validation schema
 const inventorySchema = z.object({
@@ -24,6 +25,16 @@ const inventorySchema = z.object({
     )
     .optional(),
 });
+
+type ListingAssignmentCandidate = {
+  id: string;
+  title: string;
+};
+
+const normalizeOptionalId = (value: string | null | undefined): string | null => {
+  if (value === "none") return null;
+  return value ?? null;
+};
 
 export const inventoryRouter = createTRPCRouter({
   // Get all inventory items for select dropdown
@@ -157,8 +168,34 @@ export const inventoryRouter = createTRPCRouter({
       try {
         const { images, ...inventoryData } = input;
         const createCount = Math.max(1, inventoryData.count ?? 1);
+        const normalizedStatus = inventoryData.status ?? PartStatus.AVAILABLE;
+        const explicitListingId = normalizeOptionalId(inventoryData.allocatedToListingId);
 
-        const created = await ctx.db.$transaction(async (tx) => {
+        const createResult = await ctx.db.$transaction(async (tx) => {
+          let assignmentCandidates: ListingAssignmentCandidate[] = [];
+          if (!explicitListingId && normalizedStatus === PartStatus.AVAILABLE) {
+            assignmentCandidates = await tx.listing.findMany({
+              where: {
+                active: true,
+                components: {
+                  some: {
+                    partDetailId: inventoryData.partDetailsId,
+                  },
+                },
+              },
+              select: {
+                id: true,
+                title: true,
+              },
+              orderBy: {
+                createdAt: "asc",
+              },
+            });
+          }
+
+          const autoAssignedListingId =
+            assignmentCandidates.length === 1 ? assignmentCandidates[0]?.id ?? null : null;
+          const resolvedListingId = explicitListingId ?? autoAssignedListingId;
           const createdParts = [];
           for (let i = 0; i < createCount; i += 1) {
             const part = await tx.part.create({
@@ -171,11 +208,8 @@ export const inventoryRouter = createTRPCRouter({
                     ? null
                     : inventoryData.inventoryLocationId,
                 variant: inventoryData.variant ?? null,
-                status: inventoryData.status ?? PartStatus.AVAILABLE,
-                allocatedToListingId:
-                  inventoryData.allocatedToListingId === "none"
-                    ? null
-                    : inventoryData.allocatedToListingId,
+                status: normalizedStatus,
+                allocatedToListingId: resolvedListingId,
                 images: images
                   ? {
                       createMany: {
@@ -200,11 +234,31 @@ export const inventoryRouter = createTRPCRouter({
             });
             createdParts.push(part);
           }
-          return createdParts;
+          return {
+            createdParts,
+            assignment: {
+              createdPartIds: createdParts.map((part) => part.id),
+              autoAssignedListingId,
+              needsSelection: assignmentCandidates.length > 1,
+              candidateListings:
+                assignmentCandidates.length > 1 ? assignmentCandidates : [],
+            },
+            syncedListingId:
+              normalizedStatus === PartStatus.AVAILABLE ? resolvedListingId : null,
+          };
         });
 
-        return created.length === 1 ? created[0] : created;
+        if (createResult.syncedListingId) {
+          await syncEbayQuantityForListing(createResult.syncedListingId).catch((error) => {
+            console.error("eBay quantity sync failed after inventory create", error);
+          });
+        }
+
+        return createResult;
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to create inventory item",
@@ -227,7 +281,22 @@ export const inventoryRouter = createTRPCRouter({
 
       try {
         // Transaction to ensure data consistency
-        return await ctx.db.$transaction(async (tx) => {
+        const updateResult = await ctx.db.$transaction(async (tx) => {
+          const existingInventory = await tx.part.findUnique({
+            where: { id },
+            select: {
+              status: true,
+              allocatedToListingId: true,
+            },
+          });
+
+          if (!existingInventory) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Inventory item not found",
+            });
+          }
+
           // If images are provided, replace all part images.
           if (images) {
             await tx.image.deleteMany({ where: { partId: id } });
@@ -274,9 +343,40 @@ export const inventoryRouter = createTRPCRouter({
             },
           });
 
-          return updatedInventory;
+          const allocationChanged =
+            existingInventory.allocatedToListingId !==
+            updatedInventory.allocatedToListingId;
+          const statusChanged = existingInventory.status !== updatedInventory.status;
+
+          const affectedListingIds = new Set<string>();
+          if (allocationChanged || statusChanged) {
+            if (existingInventory.allocatedToListingId) {
+              affectedListingIds.add(existingInventory.allocatedToListingId);
+            }
+            if (updatedInventory.allocatedToListingId) {
+              affectedListingIds.add(updatedInventory.allocatedToListingId);
+            }
+          }
+
+          return {
+            updatedInventory,
+            affectedListingIds: [...affectedListingIds],
+          };
         });
+
+        if (updateResult.affectedListingIds.length > 0) {
+          await Promise.allSettled(
+            updateResult.affectedListingIds.map(async (listingId) =>
+              syncEbayQuantityForListing(listingId),
+            ),
+          );
+        }
+
+        return updateResult.updatedInventory;
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update inventory item",
@@ -296,6 +396,7 @@ export const inventoryRouter = createTRPCRouter({
           where: { id },
           select: {
             status: true,
+            allocatedToListingId: true,
           },
         });
         if (!part) {
@@ -320,8 +421,17 @@ export const inventoryRouter = createTRPCRouter({
           where: { id },
         });
 
+        if (part.allocatedToListingId) {
+          await syncEbayQuantityForListing(part.allocatedToListingId).catch((error) => {
+            console.error("eBay quantity sync failed after inventory delete", error);
+          });
+        }
+
         return { success: true };
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to delete inventory item",
