@@ -34,6 +34,7 @@ export function DeletePartDialog({
       toast.success("Part deleted successfully");
       onOpenChange(false);
       void utils.part.getAll.invalidate();
+      void utils.inventory.getAll.invalidate();
     },
     onError: (error) => {
       toast.error(`Failed to delete part: ${error.message}`);

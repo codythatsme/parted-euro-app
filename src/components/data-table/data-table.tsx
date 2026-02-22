@@ -4,10 +4,14 @@ import * as React from "react";
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type ExpandedState,
+  type FilterFn,
+  type Row,
   type SortingState,
   type VisibilityState,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
@@ -39,6 +43,10 @@ interface DataTableProps<TData, TValue> {
   setPageIndex: (value: number | null) => void;
   pageSize: number;
   setPageSize: (value: number | null) => void;
+  initialColumnVisibility?: VisibilityState;
+  getRowCanExpand?: (row: TData) => boolean;
+  renderExpandedRow?: (row: Row<TData>) => React.ReactNode;
+  globalFilterFn?: FilterFn<TData>;
 }
 
 export function DataTable<TData, TValue>({
@@ -52,15 +60,19 @@ export function DataTable<TData, TValue>({
   setPageIndex,
   pageSize,
   setPageSize,
+  initialColumnVisibility,
+  getRowCanExpand,
+  renderExpandedRow,
+  globalFilterFn,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
   );
-
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+    React.useState<VisibilityState>(initialColumnVisibility ?? {});
   const [rowSelection, setRowSelection] = React.useState({});
+  const [expanded, setExpanded] = React.useState<ExpandedState>({});
 
   const table = useReactTable({
     data,
@@ -68,12 +80,17 @@ export function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: (value: string) => void setGlobalFilter(value),
+    globalFilterFn,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
+    getExpandedRowModel: getExpandedRowModel(),
+    getRowCanExpand: (row) =>
+      getRowCanExpand ? getRowCanExpand(row.original) : false,
+    onExpandedChange: setExpanded,
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     autoResetPageIndex: false,
@@ -93,6 +110,7 @@ export function DataTable<TData, TValue>({
       globalFilter: globalFilter || "",
       columnVisibility,
       rowSelection,
+      expanded,
       pagination: {
         pageIndex,
         pageSize,
@@ -163,28 +181,36 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                  id={row.id}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      style={
-                        cell.column.columnDef.size !== undefined
-                          ? { width: cell.column.getSize() }
-                          : undefined
-                      }
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
+                <React.Fragment key={row.id}>
+                  <TableRow
+                    data-state={row.getIsSelected() && "selected"}
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    id={row.id}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell
+                        key={cell.id}
+                        style={
+                          cell.column.columnDef.size !== undefined
+                            ? { width: cell.column.getSize() }
+                            : undefined
+                        }
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {row.getIsExpanded() && renderExpandedRow && (
+                    <TableRow>
+                      <TableCell colSpan={row.getVisibleCells().length}>
+                        {renderExpandedRow(row)}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
               ))
             ) : (
               <TableRow>

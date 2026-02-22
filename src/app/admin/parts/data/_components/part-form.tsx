@@ -23,6 +23,7 @@ import {
   FormMessage,
 } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
+import { Checkbox } from "~/components/ui/checkbox";
 import {
   Command,
   CommandEmpty,
@@ -41,6 +42,7 @@ import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/utils";
 import { type Part } from "./columns";
 import { FilterableCarSelect } from "~/components/ui/filterable-car-select";
+import { VirtualizedCombobox } from "~/components/ui/virtualized-combobox";
 
 // Schema for form validation
 const formSchema = z.object({
@@ -57,6 +59,11 @@ const formSchema = z.object({
     .optional(),
   cars: z.array(z.string()).default([]),
   partTypes: z.array(z.string()).default([]),
+  createInventory: z.boolean().default(false),
+  inventoryDonorVin: z.string().optional().nullable(),
+  inventoryLocationId: z.string().optional().nullable(),
+  inventoryVariant: z.string().optional().nullable(),
+  inventoryCount: z.coerce.number().int().min(1).default(1),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -76,12 +83,13 @@ export function PartForm({
 }: PartFormProps) {
   const [selectedCars, setSelectedCars] = useState<string[]>([]);
   const [selectedPartTypes, setSelectedPartTypes] = useState<string[]>([]);
-  const [carsOpen, setCarsOpen] = useState(false);
   const [partTypesOpen, setPartTypesOpen] = useState(false);
 
   // Fetch available cars and part types for selects
   const { data: carOptions = [] } = api.part.getAllCars.useQuery();
   const { data: partTypeOptions = [] } = api.part.getAllPartTypes.useQuery();
+  const { data: donorOptions = [] } = api.donor.getAllDonorsWithCars.useQuery();
+  const { data: locationOptions = [] } = api.location.getAllLocations.useQuery();
   const utils = api.useUtils();
 
   const form = useForm<FormValues>({
@@ -97,6 +105,11 @@ export function PartForm({
       costPrice: defaultValues?.costPrice ?? 0,
       cars: [],
       partTypes: [],
+      createInventory: false,
+      inventoryDonorVin: null,
+      inventoryLocationId: null,
+      inventoryVariant: null,
+      inventoryCount: 1,
     },
   });
 
@@ -113,6 +126,11 @@ export function PartForm({
         costPrice: defaultValues.costPrice ?? 0,
         cars: defaultValues.cars.map((car) => car.id),
         partTypes: defaultValues.partTypes.map((type) => type.id),
+        createInventory: false,
+        inventoryDonorVin: null,
+        inventoryLocationId: null,
+        inventoryVariant: null,
+        inventoryCount: 1,
       });
       setSelectedCars(defaultValues.cars.map((car) => car.id));
       setSelectedPartTypes(defaultValues.partTypes.map((type) => type.id));
@@ -128,72 +146,92 @@ export function PartForm({
         costPrice: 0,
         cars: [],
         partTypes: [],
+        createInventory: false,
+        inventoryDonorVin: null,
+        inventoryLocationId: null,
+        inventoryVariant: null,
+        inventoryCount: 1,
       });
       setSelectedCars([]);
       setSelectedPartTypes([]);
     }
   }, [defaultValues, form, open]);
 
-  const createMutation = api.part.create.useMutation({
-    onSuccess: (part) => {
-      toast.success(`Part ${part.partNo} created successfully`);
+  const createMutation = api.part.create.useMutation();
+  const updateMutation = api.part.update.useMutation();
+  const createInventoryMutation = api.inventory.create.useMutation();
+
+  const isSubmitting =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    createInventoryMutation.isPending;
+
+  const onSubmit = async (values: FormValues) => {
+    try {
+      if (isEditing && defaultValues) {
+        const updatedPart = await updateMutation.mutateAsync({
+          partNo: defaultValues.partNo.trim(),
+          data: {
+            partNo: values.partNo,
+            alternatePartNumbers: values.alternatePartNumbers,
+            name: values.name,
+            weight: values.weight,
+            length: values.length,
+            width: values.width,
+            height: values.height,
+            costPrice: values.costPrice,
+            cars: selectedCars,
+            partTypes: selectedPartTypes,
+          },
+        });
+        toast.success(`Part ${updatedPart.partNo} updated successfully`);
+        onOpenChange(false);
+        void utils.part.getAll.invalidate();
+        void utils.inventory.getAll.invalidate();
+        return;
+      }
+
+      const createdPart = await createMutation.mutateAsync({
+        partNo: values.partNo,
+        alternatePartNumbers: values.alternatePartNumbers,
+        name: values.name,
+        weight: values.weight,
+        length: values.length,
+        width: values.width,
+        height: values.height,
+        costPrice: values.costPrice,
+        cars: selectedCars,
+        partTypes: selectedPartTypes,
+      });
+
+      if (values.createInventory) {
+        await createInventoryMutation.mutateAsync({
+          partDetailsId: createdPart.partNo,
+          donorVin: values.inventoryDonorVin,
+          inventoryLocationId: values.inventoryLocationId,
+          variant: values.inventoryVariant,
+          count: values.inventoryCount,
+        });
+      }
+
+      toast.success(
+        values.createInventory
+          ? `Part ${createdPart.partNo} and inventory created successfully`
+          : `Part ${createdPart.partNo} created successfully`,
+      );
       form.reset();
       setSelectedCars([]);
       setSelectedPartTypes([]);
       onOpenChange(false);
       void utils.part.getAll.invalidate();
-    },
-    onError: (error) => {
-      toast.error(`Failed to create part: ${error.message}`);
-    },
-  });
-
-  const updateMutation = api.part.update.useMutation({
-    onSuccess: (part) => {
-      toast.success(`Part ${part.partNo} updated successfully`);
-      onOpenChange(false);
-      void utils.part.getAll.invalidate();
-    },
-    onError: (error) => {
-      toast.error(`Failed to update part: ${error.message}`);
-    },
-  });
-
-  const isSubmitting = createMutation.isPending || updateMutation.isPending;
-
-  const onSubmit = (values: FormValues) => {
-    if (isEditing && defaultValues) {
-      updateMutation.mutate({
-        partNo: defaultValues.partNo.trim(),
-        data: {
-          ...values,
-          cars: selectedCars,
-          partTypes: selectedPartTypes,
-        },
-      });
-    } else {
-      createMutation.mutate({
-        ...values,
-        cars: selectedCars,
-        partTypes: selectedPartTypes,
-      });
+      void utils.inventory.getAll.invalidate();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? `Failed to save part: ${error.message}`
+          : "Failed to save part",
+      );
     }
-  };
-
-  const handleCarSelect = (value: string) => {
-    setSelectedCars((current) => {
-      if (current.includes(value)) {
-        return current.filter((id) => id !== value);
-      } else {
-        return [...current, value];
-      }
-    });
-    form.setValue(
-      "cars",
-      selectedCars.includes(value)
-        ? selectedCars.filter((id) => id !== value)
-        : [...selectedCars, value],
-    );
   };
 
   const handlePartTypeSelect = (value: string) => {
@@ -211,6 +249,8 @@ export function PartForm({
         : [...selectedPartTypes, value],
     );
   };
+
+  const shouldCreateInventory = form.watch("createInventory");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -491,6 +531,117 @@ export function PartForm({
                 </FormItem>
               )}
             />
+
+            {!isEditing && (
+              <div className="flex flex-col gap-4 rounded-md border p-4">
+                <FormField
+                  control={form.control}
+                  name="createInventory"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center gap-3">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={(checked) =>
+                            field.onChange(Boolean(checked))
+                          }
+                        />
+                      </FormControl>
+                      <div className="grid gap-1.5">
+                        <FormLabel className="cursor-pointer">
+                          Create inventory now (optional)
+                        </FormLabel>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+
+                {shouldCreateInventory && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="inventoryCount"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Inventory Count</FormLabel>
+                            <FormControl>
+                              <Input type="number" min={1} {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="inventoryVariant"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Variant</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Variant (optional)"
+                                {...field}
+                                value={field.value ?? ""}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="inventoryDonorVin"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Donor Car</FormLabel>
+                          <VirtualizedCombobox
+                            options={[
+                              { value: "none", label: "None" },
+                              ...donorOptions,
+                            ]}
+                            value={field.value ?? "none"}
+                            onChange={(value) =>
+                              field.onChange(value === "none" ? null : value)
+                            }
+                            placeholder="Select donor (optional)"
+                            searchPlaceholder="Search donor cars..."
+                            disabled={isSubmitting}
+                          />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="inventoryLocationId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Inventory Location</FormLabel>
+                          <VirtualizedCombobox
+                            options={[
+                              { value: "none", label: "Not assigned" },
+                              ...locationOptions,
+                            ]}
+                            value={field.value ?? "none"}
+                            onChange={(value) =>
+                              field.onChange(value === "none" ? null : value)
+                            }
+                            placeholder="Select location (optional)"
+                            searchPlaceholder="Search locations..."
+                            disabled={isSubmitting}
+                          />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
+              </div>
+            )}
 
             <DialogFooter className="pt-2">
               <Button

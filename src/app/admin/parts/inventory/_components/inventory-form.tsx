@@ -174,6 +174,10 @@ interface InventoryFormProps {
   defaultValues?: AdminInventoryItem;
   isEditing?: boolean;
   isDuplicating?: boolean;
+  prefillPart?: {
+    partNo: string;
+    name?: string;
+  };
 }
 
 // Split the validation for better type safety
@@ -239,6 +243,7 @@ export function InventoryForm({
   defaultValues,
   isEditing = false,
   isDuplicating = false,
+  prefillPart,
 }: InventoryFormProps) {
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [newLocationName, setNewLocationName] = useState("");
@@ -294,7 +299,10 @@ export function InventoryForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       id: isEditing && !isDuplicating ? defaultValues?.id : undefined,
-      partDetailsId: defaultValues?.partDetailsId ?? "",
+      partDetailsId:
+        !isEditing && !isDuplicating
+          ? (prefillPart?.partNo ?? "")
+          : (defaultValues?.partDetailsId ?? ""),
       donorVin: defaultValues?.donorVin ?? null,
       inventoryLocationId: defaultValues?.inventoryLocationId ?? null,
       variant: defaultValues?.variant ?? null,
@@ -502,7 +510,10 @@ export function InventoryForm({
       // Reset form with new default values
       form.reset({
         id: isEditing && !isDuplicating ? defaultValues?.id : undefined,
-        partDetailsId: defaultValues?.partDetailsId ?? "",
+        partDetailsId:
+          !isEditing && !isDuplicating
+            ? (prefillPart?.partNo ?? "")
+            : (defaultValues?.partDetailsId ?? ""),
         donorVin: defaultValues?.donorVin ?? null,
         inventoryLocationId: defaultValues?.inventoryLocationId ?? null,
         variant: defaultValues?.variant ?? null,
@@ -549,7 +560,15 @@ export function InventoryForm({
         }
       }
     }
-  }, [open, defaultValues, isEditing, isDuplicating, form, refetchPartDetails]);
+  }, [
+    open,
+    defaultValues,
+    isEditing,
+    isDuplicating,
+    prefillPart,
+    form,
+    refetchPartDetails,
+  ]);
 
   // Handle image upload completion
   const handleImageUpload = (
@@ -674,6 +693,7 @@ export function InventoryForm({
             // Success - close the form
             onOpenChange(false);
             void utils.inventory.getAll.invalidate();
+            void utils.part.getAll.invalidate();
             void utils.part.getAllPartDetails.invalidate();
             void utils.part.getById.invalidate({ partNo: newPart.partNo });
             void utils.part.getImagesByPartNo.invalidate({
@@ -767,6 +787,7 @@ export function InventoryForm({
           // Success - close the form
           onOpenChange(false);
           void utils.inventory.getAll.invalidate();
+          void utils.part.getAll.invalidate();
           if (values.partDetailsId) {
             void utils.part.getById.invalidate({
               partNo: values.partDetailsId,
