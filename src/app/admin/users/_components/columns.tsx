@@ -1,7 +1,6 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
 import { api } from "~/trpc/react";
 import { toast } from "sonner";

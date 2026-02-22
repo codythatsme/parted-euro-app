@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { type Prisma } from "@prisma/client";
 import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
 
 // Define car input validation schema

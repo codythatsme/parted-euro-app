@@ -7,8 +7,6 @@ import { getCarColumns } from "./_components/columns";
 import { CarForm } from "./_components/car-form";
 import { DeleteCarDialog } from "./_components/delete-car-dialog";
 import { keepPreviousData } from "@tanstack/react-query";
-import { Input } from "~/components/ui/input";
-import { type SortingState } from "@tanstack/react-table";
 import { Button } from "~/components/ui/button";
 import { Plus } from "lucide-react";
 import { type AdminCarItem } from "~/trpc/shared";
@@ -37,7 +35,7 @@ export default function CarsAdminPage() {
   });
 
   // Fetch all cars
-  const { data, isLoading, isError } = api.car.getAll.useQuery(undefined, {
+  const { data, isLoading, isError: _isError } = api.car.getAll.useQuery(undefined, {
     placeholderData: keepPreviousData,
   });
 

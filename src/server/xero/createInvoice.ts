@@ -225,7 +225,7 @@ export const createInvoiceFromStripeEvent = async (
     });
 
     return;
-  } catch (err) {
+  } catch (_err) {
     // write event and lineitems to db
     await db.failedOrder.create({
       data: {

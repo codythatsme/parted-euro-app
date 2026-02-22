@@ -1,7 +1,6 @@
 import { type Metadata } from "next";
 import { api } from "~/trpc/server";
 import { notFound } from "next/navigation";
-import Image from "next/image";
 import { formatCurrency } from "~/lib/utils";
 import { Separator } from "~/components/ui/separator";
 import { Badge } from "~/components/ui/badge";

@@ -5,8 +5,6 @@ import {
   Home,
   Car,
   Package,
-  Boxes,
-  UserPlus,
   ShoppingCart,
   Tag,
   Map,

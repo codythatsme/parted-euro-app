@@ -29,7 +29,6 @@ import {
 } from "~/components/ui/accordion";
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -49,18 +48,16 @@ import {
   ChevronsUpDown,
   Loader2,
   Plus,
-  Search,
   X,
   GripVertical,
   Image as ImageIcon,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
-import { Badge } from "~/components/ui/badge";
 import { type AdminInventoryItem } from "~/trpc/shared";
 import { useDebounce } from "~/hooks/use-debounce";
 import { VirtualizedMultiSelect } from "~/components/ui/virtualized-multi-select";
 import { AspectRatio } from "~/components/ui/aspect-ratio";
-import { UploadButton, UploadDropzone } from "~/components/CloudinaryUpload";
+import { UploadDropzone } from "~/components/CloudinaryUpload";
 import {
   DndContext,
   closestCenter,
@@ -267,7 +264,7 @@ export function InventoryForm({
   prefillPart,
 }: InventoryFormProps) {
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
-  const [newLocationName, setNewLocationName] = useState("");
+  const [, setNewLocationName] = useState("");
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
   const [partSearchOpen, setPartSearchOpen] = useState(false);
   const [isNewPart, setIsNewPart] = useState(false);
@@ -413,12 +410,6 @@ export function InventoryForm({
 
   // For the part selection dropdown
   const selectedPartId = form.watch("partDetailsId");
-  const selectedPartDetails = React.useMemo(() => {
-    return selectedPartId
-      ? searchResults.find((part) => part.value === selectedPartId)
-      : null;
-  }, [selectedPartId, searchResults]);
-
   // Try to fetch part images if the API endpoint exists
   const partImagesQuery = api.part.getImagesByPartNo.useQuery(
     { partNo: selectedPartId ?? "" },
@@ -771,7 +762,7 @@ export function InventoryForm({
             };
 
             if (isEditing && !isDuplicating && defaultValues) {
-              let shouldCloseAfterSave = true;
+              const shouldCloseAfterSave = true;
               await updateInventoryMutation.mutateAsync({
                 id: defaultValues.id,
                 data: inventoryData,
@@ -1268,7 +1259,7 @@ export function InventoryForm({
                     <FormField
                       control={form.control}
                       name="cars"
-                      render={({ field }) => (
+                      render={({ field: _field }) => (
                         <FormItem className="flex flex-col">
                           <FormLabel>Compatible Cars</FormLabel>
                           <FormControl>
@@ -1293,7 +1284,7 @@ export function InventoryForm({
                     <FormField
                       control={form.control}
                       name="partTypes"
-                      render={({ field }) => (
+                      render={({ field: _field }) => (
                         <FormItem className="flex flex-col">
                           <FormLabel>Part Categories</FormLabel>
                           <FormControl>
@@ -1440,7 +1431,7 @@ export function InventoryForm({
                               // Create a promise for each file to be compressed
                               const compressPromises = files.map(
                                 (file) =>
-                                  new Promise<File>((resolve, reject) => {
+                                  new Promise<File>((resolve, _reject) => {
                                     // Skip compression for non-image files
                                     if (!file.type.startsWith("image/")) {
                                       resolve(file);

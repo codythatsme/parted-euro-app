@@ -51,8 +51,8 @@ export function AddTrackingDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const defaultValues: Partial<FormData> = {
-    trackingNumber: order.trackingNumber || "",
-    carrier: order.carrier || "",
+    trackingNumber: order.trackingNumber ?? "",
+    carrier: order.carrier ?? "",
   };
 
   const form = useForm<FormData>({
@@ -119,7 +119,7 @@ export function AddTrackingDialog({
                     <Input
                       placeholder="e.g., Australia Post, DHL, FedEx"
                       {...field}
-                      value={field.value || ""}
+                      value={field.value ?? ""}
                     />
                   </FormControl>
                   <FormMessage />

@@ -145,7 +145,7 @@ const container = {
   margin: "0 auto",
 };
 
-const h1 = {
+const _h1 = {
   color: "#333",
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
@@ -155,7 +155,7 @@ const h1 = {
   padding: "0",
 };
 
-const link = {
+const _link = {
   color: "#2754C5",
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
@@ -179,7 +179,7 @@ const span = {
   display: "inline",
 };
 
-const footer = {
+const _footer = {
   color: "#898989",
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
@@ -189,7 +189,7 @@ const footer = {
   marginBottom: "24px",
 };
 
-const code = {
+const _code = {
   display: "inline-block",
   padding: "16px 4.5%",
   width: "90.5%",

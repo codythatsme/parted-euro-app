@@ -34,7 +34,7 @@ export function DeleteLocationDialog({
       toast.success("Location deleted successfully");
       onOpenChange(false);
       // Invalidate the location queries to trigger a refetch
-      utils.location.getAll.invalidate();
+      void utils.location.getAll.invalidate();
       router.refresh();
     },
     onError: (error) => {

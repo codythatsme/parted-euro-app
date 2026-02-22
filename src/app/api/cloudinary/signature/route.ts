@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     }
 
     // Parse and validate request body
-    const body = await request.json();
+    const body: unknown = await request.json();
     const parsed = requestSchema.safeParse(body);
 
     if (!parsed.success) {

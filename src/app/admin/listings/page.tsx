@@ -140,7 +140,7 @@ export default function ListingsAdminPage() {
 
   useEffect(() => {
     if (code) {
-      const updateTokenRes = updateRefreshToken.mutateAsync({
+      const _updateTokenRes = updateRefreshToken.mutateAsync({
         code: code,
       });
 

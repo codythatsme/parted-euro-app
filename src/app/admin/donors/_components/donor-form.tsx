@@ -582,7 +582,7 @@ export function DonorForm({
                       // Create a promise for each file to be compressed
                       const compressPromises = files.map(
                         (file) =>
-                          new Promise<File>((resolve, reject) => {
+                          new Promise<File>((resolve, _reject) => {
                             // Skip compression for non-image files
                             if (!file.type.startsWith("image/")) {
                               resolve(file);

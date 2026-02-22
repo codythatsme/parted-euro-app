@@ -145,7 +145,7 @@ function generatePickupOrderEmailHTML(order: OrderWithItems): string {
   if (!order) throw new Error("Order not found");
   const orderItemsHTML = order.orderItems
     .map(
-      (item, index) => `
+      (item, _index) => `
     <tr>
       <td>
         <img src="${

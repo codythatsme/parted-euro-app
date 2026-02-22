@@ -15,6 +15,7 @@ import { intersection, uniq } from './array'
 export type ElementType<T> = T extends (infer U)[] ? U : T
 
 declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     /* The display name of the column. */
     displayName: string
@@ -773,33 +774,50 @@ export function __dateFilterFn<TData>(
 
   const filterVals = filterValue.values
   const d1 = filterVals[0]
-  const d2 = filterVals[1]
 
   const value = inputData
 
   switch (filterValue.operator) {
-    case 'is':
+    case 'is': {
+      if (d1 === undefined) return false
       return isSameDay(value, d1)
-    case 'is not':
+    }
+    case 'is not': {
+      if (d1 === undefined) return false
       return !isSameDay(value, d1)
-    case 'is before':
+    }
+    case 'is before': {
+      if (d1 === undefined) return false
       return isBefore(value, startOfDay(d1))
-    case 'is on or after':
+    }
+    case 'is on or after': {
+      if (d1 === undefined) return false
       return isSameDay(value, d1) || isAfter(value, startOfDay(d1))
-    case 'is after':
+    }
+    case 'is after': {
+      if (d1 === undefined) return false
       return isAfter(value, startOfDay(d1))
-    case 'is on or before':
+    }
+    case 'is on or before': {
+      if (d1 === undefined) return false
       return isSameDay(value, d1) || isBefore(value, startOfDay(d1))
-    case 'is between':
+    }
+    case 'is between': {
+      const d2 = filterVals[1]
+      if (d1 === undefined || d2 === undefined) return false
       return isWithinInterval(value, {
         start: startOfDay(d1),
         end: endOfDay(d2),
       })
-    case 'is not between':
+    }
+    case 'is not between': {
+      const d2 = filterVals[1]
+      if (d1 === undefined || d2 === undefined) return false
       return !isWithinInterval(value, {
-        start: startOfDay(filterValue.values[0]),
-        end: endOfDay(filterValue.values[1]),
+        start: startOfDay(d1),
+        end: endOfDay(d2),
       })
+    }
   }
 }
 
@@ -820,7 +838,9 @@ export function __textFilterFn<TData>(
   if (!filterValue || filterValue.values.length === 0) return true
 
   const value = inputData.toLowerCase().trim()
-  const filterStr = filterValue.values[0].toLowerCase().trim()
+  const first = filterValue.values[0]
+  if (first === undefined) return true
+  const filterStr = first.toLowerCase().trim()
 
   if (filterStr === '') return true
 
@@ -848,12 +868,13 @@ export function __numberFilterFn<TData>(
   inputData: number,
   filterValue: FilterModel<'number', TData>,
 ) {
-  if (!filterValue || !filterValue.values || filterValue.values.length === 0) {
+  if (!filterValue?.values || filterValue.values.length === 0) {
     return true
   }
 
   const value = inputData
   const filterVal = filterValue.values[0]
+  if (filterVal === undefined) return true
 
   switch (filterValue.operator) {
     case 'is':
@@ -869,14 +890,14 @@ export function __numberFilterFn<TData>(
     case 'is less than or equal to':
       return value <= filterVal
     case 'is between': {
-      const lowerBound = filterValue.values[0]
       const upperBound = filterValue.values[1]
-      return value >= lowerBound && value <= upperBound
+      if (upperBound === undefined) return true
+      return value >= filterVal && value <= upperBound
     }
     case 'is not between': {
-      const lowerBound = filterValue.values[0]
       const upperBound = filterValue.values[1]
-      return value < lowerBound || value > upperBound
+      if (upperBound === undefined) return true
+      return value < filterVal || value > upperBound
     }
     default:
       return true
@@ -889,10 +910,10 @@ export function createNumberRange(values: number[] | undefined) {
 
   if (!values || values.length === 0) return [a, b]
   if (values.length === 1) {
-    a = values[0]
+    a = values[0] ?? 0
   } else {
-    a = values[0]
-    b = values[1]
+    a = values[0] ?? 0
+    b = values[1] ?? 0
   }
 
   const [min, max] = a < b ? [a, b] : [b, a]

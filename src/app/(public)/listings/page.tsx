@@ -5,7 +5,6 @@ import { api } from "~/trpc/react";
 import { parseAsInteger, useQueryState } from "nuqs";
 import { useDebounce } from "use-debounce";
 import {
-  ChevronDown,
   Search,
   Filter,
   X,
@@ -24,7 +23,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "~/components/ui/select";
 import {
   Sheet,

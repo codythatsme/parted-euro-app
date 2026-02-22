@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure, adminProcedure } from "../trpc";
-import { type Prisma } from "@prisma/client";
 import {
   sendOrderReadyForPickupEmail,
   sendOrderShippedEmail,

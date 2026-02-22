@@ -58,7 +58,7 @@ export const xeroRouter = createTRPCRouter({
   //     daysTillExpiry: daysTillExpiry,
   //   };
   // }),
-  authenticate: adminProcedure.mutation(async ({ ctx }) => {
+  authenticate: adminProcedure.mutation(async () => {
     const consentUrl = await xero.buildConsentUrl();
     return consentUrl;
   }),
@@ -97,7 +97,7 @@ export const xeroRouter = createTRPCRouter({
         };
       }
     }),
-  testXeroConnection: adminProcedure.query(async ({ ctx }) => {
+  testXeroConnection: adminProcedure.query(async () => {
     await initXero();
     // eslint-disable-next-line
     const activeTenantId = xero.tenants[0].tenantId;

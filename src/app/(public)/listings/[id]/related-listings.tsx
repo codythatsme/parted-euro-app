@@ -1,7 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
 import { formatCurrency } from "~/lib/utils";
-import { Badge } from "~/components/ui/badge";
 
 type ListingImage = {
   id: string;

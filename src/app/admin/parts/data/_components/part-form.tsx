@@ -503,7 +503,7 @@ export function PartForm({
             <FormField
               control={form.control}
               name="cars"
-              render={({ field }) => (
+              render={({ field: _field }) => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Compatible Cars</FormLabel>
                   <FormControl>
@@ -527,7 +527,7 @@ export function PartForm({
             <FormField
               control={form.control}
               name="partTypes"
-              render={({ field }) => (
+              render={({ field: _field }) => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Part Categories</FormLabel>
                   <Popover

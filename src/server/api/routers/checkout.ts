@@ -1,6 +1,6 @@
 import { Stripe } from "stripe";
 import { z } from "zod";
-import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
+import { createTRPCRouter, publicProcedure } from "../trpc";
 import { PartStatus } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 // import { createStripeSession } from "@/pages/api/checkout";
@@ -389,7 +389,7 @@ const getInterparcelShippingServices = async (input: ShippingServicesInput) => {
     cookieJar.PHPSESSID ??
     cookieJar.phpsessid ??
     cookieJar.PhpSessId ??
-    (cookieJar as Record<string, string>)["phpsessionid"];
+    cookieJar.phpsessionid;
   if (!phpSessId) {
     throw new Error("PHPSESSID not found in Interparcel response");
   }
@@ -399,9 +399,10 @@ const getInterparcelShippingServices = async (input: ShippingServicesInput) => {
 
   // Extract CSRF token from HTML
   let csrfToken: string | undefined;
-  const metaMatch = quotePageHtml.match(
-    /<meta\s+name=["']csrf-token["']\s+content=["']([^"']+)["']/i,
-  );
+  const metaMatch =
+    /<meta\s+name=["']csrf-token["']\s+content=["']([^"']+)["']/i.exec(
+      quotePageHtml,
+    );
   if (metaMatch) {
     csrfToken = metaMatch[1];
   }
@@ -435,7 +436,7 @@ const getInterparcelShippingServices = async (input: ShippingServicesInput) => {
           {
             headers: {
               Cookie: cookieHeader,
-              "x-csrf-token": csrfToken!,
+              "x-csrf-token": csrfToken,
             },
           },
         );
@@ -461,17 +462,16 @@ const getInterparcelShippingServices = async (input: ShippingServicesInput) => {
             }`,
           },
         };
-      } catch (error) {
+      } catch (_error) {
         return null;
       }
     });
   const availableServices = await Promise.allSettled(requests);
-  const validServices = availableServices
-    .filter((result) => result.status === "fulfilled" && result.value !== null)
-    .map(
-      (result) =>
-        (result as PromiseFulfilledResult<StripeShippingOption>).value,
-    ) as StripeShippingOption[];
+  const validServices = availableServices.flatMap((result) =>
+    result.status === "fulfilled" && result.value !== null
+      ? [result.value]
+      : [],
+  );
 
   if (!validServices.length && b2bFilteredCount === 0) {
     throw new Error("Unable to ship this item to the destination country");
@@ -777,7 +777,7 @@ export const checkoutRouter = createTRPCRouter({
         ),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ input }) => {
       const { items, name, email, countryCode, shippingOptions } = input;
 
       const session = await createStripeSession({

@@ -7,8 +7,6 @@ import { getDonorColumns, type DonorWithCar } from "./_components/columns";
 import { DonorForm } from "./_components/donor-form";
 import { DeleteDonorDialog } from "./_components/delete-donor-dialog";
 import { keepPreviousData } from "@tanstack/react-query";
-import { Input } from "~/components/ui/input";
-import { type SortingState } from "@tanstack/react-table";
 import { Button } from "~/components/ui/button";
 import { Plus } from "lucide-react";
 import { useQueryState } from "nuqs";

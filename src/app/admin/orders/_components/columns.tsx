@@ -9,11 +9,7 @@ import {
   MoreVertical,
   Check,
   X,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Pencil,
-  Trash,
   RefreshCw,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -29,8 +25,6 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { Badge } from "~/components/ui/badge";
 import { type AdminOrdersItem } from "~/trpc/shared";
-import { formatDistanceToNow } from "date-fns";
-import { CreditCard, FileText, SendHorizontal, Tag } from "lucide-react";
 import { DataTableColumnHeader } from "~/components/data-table/data-table-column-header";
 
 // Format currency

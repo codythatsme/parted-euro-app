@@ -1,5 +1,3 @@
-import { UserIcon } from "lucide-react";
-import Image from "next/image";
 import { Link } from "~/components/link";
 import React, { Suspense } from "react";
 import { MobileNav } from "./mobile-nav";

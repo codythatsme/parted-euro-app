@@ -7,7 +7,6 @@ import { getCategoryColumns, type Category } from "./_components/columns";
 import { CategoryForm } from "./_components/category-form";
 import { DeleteCategoryDialog } from "./_components/delete-category-dialog";
 import { keepPreviousData } from "@tanstack/react-query";
-import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Plus } from "lucide-react";
 import { useQueryState } from "nuqs";

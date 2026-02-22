@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
 import { type AuthToken } from "ebay-api/auth/oAuth2.js";
 import eBayApi from "ebay-api";
 import { db } from "~/server/db";

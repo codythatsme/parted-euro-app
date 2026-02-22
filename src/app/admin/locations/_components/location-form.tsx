@@ -22,7 +22,7 @@ import {
 } from "~/components/ui/form";
 import { Input } from "~/components/ui/input";
 import { toast } from "sonner";
-import { Location } from "./columns";
+import { type Location } from "./columns";
 
 export const locationFormSchema = z.object({
   id: z.string().optional(),
@@ -68,7 +68,7 @@ export function LocationForm({
       form.reset();
       onOpenChange(false);
       // Invalidate the location queries to trigger a refetch
-      utils.location.getAll.invalidate();
+      void utils.location.getAll.invalidate();
       router.refresh();
     },
     onError: (error) => {
@@ -82,7 +82,7 @@ export function LocationForm({
       form.reset();
       onOpenChange(false);
       // Invalidate the location queries to trigger a refetch
-      utils.location.getAll.invalidate();
+      void utils.location.getAll.invalidate();
       router.refresh();
     },
     onError: (error) => {
