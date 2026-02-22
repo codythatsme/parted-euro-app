@@ -12,18 +12,7 @@ type ListingType = {
   title: string;
   price: number | null;
   images: { url: string }[];
-  parts: {
-    quantity: number;
-    donor: {
-      vin: string;
-    };
-    partDetails: {
-      length: number | null;
-      width: number | null;
-      height: number | null;
-      weight: number | null;
-    };
-  }[];
+  stock: number;
 };
 
 interface AddToCartButtonProps {
@@ -42,7 +31,7 @@ export function AddToCartButton({ listing, inStock }: AddToCartButtonProps) {
     },
   });
 
-  const maxQuantity = listing.parts[0]?.quantity ?? 0;
+  const maxQuantity = listing.stock ?? 0;
 
   const handleAddToCart = async () => {
     if (!inStock) return;

@@ -375,8 +375,6 @@ export function HomepageImageUploadZone({
   className?: string;
   onUploadComplete?: () => void;
 }) {
-  const router = useRouter();
-
   const onUploadError = useCallback((error: Error) => {
     toast.error(`Error uploading images: ${error.message}`);
   }, []);

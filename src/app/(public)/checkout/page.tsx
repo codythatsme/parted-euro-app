@@ -4,12 +4,12 @@ import { useState, useEffect } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Minus, Plus, Trash2, AlertCircle, X, Loader2 } from "lucide-react";
+import { Minus, Plus, Trash2, AlertCircle, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useMemo } from "react";
 import { api } from "~/trpc/react";
 import { formatCurrency } from "~/lib/utils";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import {
   Form,
@@ -120,7 +120,7 @@ export default function Checkout() {
 
   const { isLoaded } = useGoogleMapsApi();
   const utils = api.useUtils();
-  const { data: cart = [], isLoading: isCartLoading } =
+  const { data: cart = [] } =
     api.cart.getCart.useQuery(undefined, { refetchOnWindowFocus: true });
   const removeItemMutation = api.cart.removeItem.useMutation({
     onSuccess: () => utils.cart.getCart.invalidate(),
@@ -145,7 +145,7 @@ export default function Checkout() {
     },
   );
 
-  const { data: shippingData, isLoading: isShippingLoading } =
+  const { data: shippingData } =
     api.cart.getCartShippingData.useQuery(
       {
         ids: listingIds,
@@ -314,7 +314,7 @@ export default function Checkout() {
       return;
     }
 
-    const { services, hasB2BOnlyServices } = shippingServices.data;
+    const { services } = shippingServices.data;
     const pickupOnly = isPickupOnly(services);
     const noShipping = services.length === 0;
 
@@ -677,8 +677,8 @@ function CartItem({
   onUpdateQuantity,
 }: {
   item: PopulatedCartItem;
-  onRemove: () => Promise<void>;
-  onUpdateQuantity: (quantity: number) => Promise<void>;
+  onRemove: () => Promise<unknown>;
+  onUpdateQuantity: (quantity: number) => Promise<unknown>;
 }) {
   const [isRemoving, setIsRemoving] = useState(false);
   const [isIncLoading, setIsIncLoading] = useState(false);

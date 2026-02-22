@@ -137,7 +137,7 @@ export function FinalizeOrderDialog({
         void navigator.clipboard.writeText(result.url);
         toast.success("Stripe payment URL copied to clipboard");
       }
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to create Stripe checkout session");
     } finally {
       setIsSubmitting(false);

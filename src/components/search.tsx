@@ -11,7 +11,7 @@ import {
   CommandList,
 } from "~/components/ui/command";
 import { useDebounce } from "use-debounce";
-import { Loader2, Search, Tag, Sparkles, X, ArrowRight } from "lucide-react";
+import { Loader2, Search, Tag, Sparkles, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { formatCurrency } from "~/lib/utils";

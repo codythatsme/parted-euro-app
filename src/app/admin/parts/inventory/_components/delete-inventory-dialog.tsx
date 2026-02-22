@@ -1,10 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { api } from "~/trpc/react";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -16,12 +14,12 @@ import { Button } from "~/components/ui/button";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
-import { type InventoryItem } from "../page";
+import { type AdminInventoryItem } from "~/trpc/shared";
 
 interface DeleteInventoryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  inventory: InventoryItem;
+  inventory: AdminInventoryItem;
 }
 
 export function DeleteInventoryDialog({
@@ -30,7 +28,6 @@ export function DeleteInventoryDialog({
   inventory,
 }: DeleteInventoryDialogProps) {
   const [isDeleting, setIsDeleting] = useState(false);
-  const router = useRouter();
   const utils = api.useUtils();
 
   const deleteMutation = api.inventory.delete.useMutation({
@@ -39,6 +36,7 @@ export function DeleteInventoryDialog({
       setIsDeleting(false);
       onOpenChange(false);
       void utils.inventory.getAll.invalidate();
+      void utils.part.getAll.invalidate();
     },
     onError: (error) => {
       toast.error(`Error deleting inventory item: ${error.message}`);

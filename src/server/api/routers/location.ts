@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { type Prisma } from "@prisma/client";
 import { adminProcedure, createTRPCRouter } from "../trpc";
 
 // Define location input validation schema

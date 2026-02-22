@@ -26,3 +26,7 @@ export type AdminInventoryResult = RouterOutputs["inventory"]["getAll"];
 export type AdminListingsItem =
   RouterOutputs["listings"]["getAllAdmin"]["items"][number];
 export type AdminListingsResult = RouterOutputs["listings"]["getAllAdmin"];
+export type PublicListingItem = RouterOutputs["listings"]["getListing"];
+export type ListingSearchItem =
+  RouterOutputs["listings"]["searchListings"]["listings"][number];
+export type ListingStockResult = RouterOutputs["listings"]["getStock"];

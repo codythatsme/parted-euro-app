@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { type Prisma } from "@prisma/client";
+import { PartStatus } from "@prisma/client";
 import { adminProcedure, createTRPCRouter } from "../trpc";
 import { TRPCError } from "@trpc/server";
+import { syncEbayQuantityForListing } from "~/server/lib/ebay-sync";
 
 // Define inventory input validation schema
 const inventorySchema = z.object({
@@ -10,7 +11,9 @@ const inventorySchema = z.object({
   donorVin: z.string().trim().optional().nullable(),
   inventoryLocationId: z.string().optional().nullable(),
   variant: z.string().optional().nullable(),
-  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+  status: z.nativeEnum(PartStatus).optional(),
+  allocatedToListingId: z.string().optional().nullable(),
+  count: z.coerce.number().int().min(1).optional(),
   images: z
     .array(
       z.object({
@@ -23,12 +26,22 @@ const inventorySchema = z.object({
     .optional(),
 });
 
+type ListingAssignmentCandidate = {
+  id: string;
+  title: string;
+};
+
+const normalizeOptionalId = (value: string | null | undefined): string | null => {
+  if (value === "none") return null;
+  return value ?? null;
+};
+
 export const inventoryRouter = createTRPCRouter({
   // Get all inventory items for select dropdown
   getAllForSelect: adminProcedure.query(async ({ ctx }) => {
     const inventory = await ctx.db.part.findMany({
       where: {
-        sold: false,
+        status: PartStatus.AVAILABLE,
       },
       select: {
         id: true,
@@ -39,9 +52,10 @@ export const inventoryRouter = createTRPCRouter({
           },
         },
         variant: true,
-        listing: {
+        allocatedToListing: {
           select: {
             id: true,
+            title: true,
           },
         },
       },
@@ -57,7 +71,8 @@ export const inventoryRouter = createTRPCRouter({
       label: `${item.partDetails.name} - (${item.partDetails.partNo})${
         item.variant ? ` - ${item.variant}` : ""
       }`,
-      isAssigned: !!item.listing.length,
+      isAssigned: !!item.allocatedToListing?.id,
+      listingTitle: item.allocatedToListing?.title ?? null,
     }));
   }),
 
@@ -89,9 +104,10 @@ export const inventoryRouter = createTRPCRouter({
             name: true,
           },
         },
-        listing: {
+        allocatedToListing: {
           select: {
             id: true,
+            title: true,
           },
         },
         images: {
@@ -121,7 +137,7 @@ export const inventoryRouter = createTRPCRouter({
           partDetails: true,
           donor: true,
           inventoryLocation: true,
-          listing: true,
+          allocatedToListing: true,
           images: {
             select: {
               id: true,
@@ -151,42 +167,98 @@ export const inventoryRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       try {
         const { images, ...inventoryData } = input;
+        const createCount = Math.max(1, inventoryData.count ?? 1);
+        const normalizedStatus = inventoryData.status ?? PartStatus.AVAILABLE;
+        const explicitListingId = normalizeOptionalId(inventoryData.allocatedToListingId);
 
-        const inventory = await ctx.db.part.create({
-          data: {
-            partDetailsId: inventoryData.partDetailsId,
-            donorVin:
-              inventoryData.donorVin === "none" ? null : inventoryData.donorVin,
-            inventoryLocationId:
-              inventoryData.inventoryLocationId === "none"
-                ? null
-                : inventoryData.inventoryLocationId,
-            variant: inventoryData.variant ?? null,
-            quantity: inventoryData.quantity,
-            images: images
-              ? {
-                  createMany: {
-                    data: images.map((image) => ({
-                      id: image.isFromPartImages
-                        ? crypto.randomUUID()
-                        : image.id,
-                      url: image.url,
-                      order: image.order,
-                    })),
+        const createResult = await ctx.db.$transaction(async (tx) => {
+          let assignmentCandidates: ListingAssignmentCandidate[] = [];
+          if (!explicitListingId && normalizedStatus === PartStatus.AVAILABLE) {
+            assignmentCandidates = await tx.listing.findMany({
+              where: {
+                active: true,
+                components: {
+                  some: {
+                    partDetailId: inventoryData.partDetailsId,
                   },
-                }
-              : undefined,
-          },
-          include: {
-            partDetails: true,
-            donor: true,
-            inventoryLocation: true,
-            images: true,
-          },
+                },
+              },
+              select: {
+                id: true,
+                title: true,
+              },
+              orderBy: {
+                createdAt: "asc",
+              },
+            });
+          }
+
+          const autoAssignedListingId =
+            assignmentCandidates.length === 1 ? assignmentCandidates[0]?.id ?? null : null;
+          const resolvedListingId = explicitListingId ?? autoAssignedListingId;
+          const createdParts = [];
+          for (let i = 0; i < createCount; i += 1) {
+            const part = await tx.part.create({
+              data: {
+                partDetailsId: inventoryData.partDetailsId,
+                donorVin:
+                  inventoryData.donorVin === "none" ? null : inventoryData.donorVin,
+                inventoryLocationId:
+                  inventoryData.inventoryLocationId === "none"
+                    ? null
+                    : inventoryData.inventoryLocationId,
+                variant: inventoryData.variant ?? null,
+                status: normalizedStatus,
+                allocatedToListingId: resolvedListingId,
+                images: images
+                  ? {
+                      createMany: {
+                        data: images.map((image) => ({
+                          id: image.isFromPartImages
+                            ? crypto.randomUUID()
+                            : crypto.randomUUID(),
+                          url: image.url,
+                          order: image.order,
+                        })),
+                      },
+                    }
+                  : undefined,
+              },
+              include: {
+                partDetails: true,
+                donor: true,
+                inventoryLocation: true,
+                allocatedToListing: true,
+                images: true,
+              },
+            });
+            createdParts.push(part);
+          }
+          return {
+            createdParts,
+            assignment: {
+              createdPartIds: createdParts.map((part) => part.id),
+              autoAssignedListingId,
+              needsSelection: assignmentCandidates.length > 1,
+              candidateListings:
+                assignmentCandidates.length > 1 ? assignmentCandidates : [],
+            },
+            syncedListingId:
+              normalizedStatus === PartStatus.AVAILABLE ? resolvedListingId : null,
+          };
         });
 
-        return inventory;
+        if (createResult.syncedListingId) {
+          await syncEbayQuantityForListing(createResult.syncedListingId).catch((error) => {
+            console.error("eBay quantity sync failed after inventory create", error);
+          });
+        }
+
+        return createResult;
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to create inventory item",
@@ -200,7 +272,7 @@ export const inventoryRouter = createTRPCRouter({
     .input(
       z.object({
         id: z.string().trim(),
-        data: inventorySchema,
+        data: inventorySchema.omit({ count: true, id: true }),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -208,80 +280,34 @@ export const inventoryRouter = createTRPCRouter({
       const { images, ...updateData } = data;
 
       try {
-        // First, get current images for the part to compare
-        const currentImages = await ctx.db.image.findMany({
-          where: { partId: id },
-          select: { id: true },
-        });
-
         // Transaction to ensure data consistency
-        return await ctx.db.$transaction(async (tx) => {
-          // If images are provided, handle image updates intelligently
+        const updateResult = await ctx.db.$transaction(async (tx) => {
+          const existingInventory = await tx.part.findUnique({
+            where: { id },
+            select: {
+              status: true,
+              allocatedToListingId: true,
+            },
+          });
+
+          if (!existingInventory) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Inventory item not found",
+            });
+          }
+
+          // If images are provided, replace all part images.
           if (images) {
-            const currentImageIds = new Set(currentImages.map((img) => img.id));
-            const newImageIds = new Set(
-              images
-                .filter((img) => !img.isFromPartImages) // Only include non-partImages for comparison
-                .map((img) => img.id),
-            );
-
-            // Find images to remove (in current but not in new)
-            const imagesToRemove = [...currentImageIds].filter(
-              (imgId) => !newImageIds.has(imgId),
-            );
-
-            // Find images to add (in new but not in current)
-            const imagesToAdd = [...newImageIds].filter(
-              (imgId) => !currentImageIds.has(imgId),
-            );
-
-            // Find images from partImages that need new records
-            const imagesFromPartImages = images.filter(
-              (img) => img.isFromPartImages,
-            );
-
-            // Only delete images that are not in the new list
-            if (imagesToRemove.length > 0) {
-              await tx.image.deleteMany({
-                where: {
-                  id: { in: imagesToRemove },
-                  partId: id,
-                },
-              });
-            }
-
-            // Connect new images that weren't already connected
-            if (imagesToAdd.length > 0) {
-              await tx.part.update({
-                where: { id },
-                data: {
-                  images: {
-                    connect: imagesToAdd.map((imgId) => ({ id: imgId })),
-                  },
-                },
-              });
-            }
-
-            // Create new images for those from partImages
-            if (imagesFromPartImages.length > 0) {
+            await tx.image.deleteMany({ where: { partId: id } });
+            if (images.length > 0) {
               await tx.image.createMany({
-                data: imagesFromPartImages.map((img) => ({
+                data: images.map((img) => ({
                   id: crypto.randomUUID(),
                   url: img.url,
                   order: img.order,
                   partId: id,
                 })),
-              });
-            }
-
-            // Update the order of all images
-            for (const image of images.filter((img) => !img.isFromPartImages)) {
-              await tx.image.update({
-                where: { id: image.id },
-                data: {
-                  order: image.order,
-                  partId: id, // Ensure it's connected to this part
-                },
               });
             }
           }
@@ -298,12 +324,17 @@ export const inventoryRouter = createTRPCRouter({
                   ? null
                   : updateData.inventoryLocationId,
               variant: updateData.variant ?? null,
-              quantity: updateData.quantity,
+              status: updateData.status,
+              allocatedToListingId:
+                updateData.allocatedToListingId === "none"
+                  ? null
+                  : updateData.allocatedToListingId,
             },
             include: {
               partDetails: true,
               donor: true,
               inventoryLocation: true,
+              allocatedToListing: true,
               images: {
                 orderBy: {
                   order: "asc",
@@ -312,9 +343,40 @@ export const inventoryRouter = createTRPCRouter({
             },
           });
 
-          return updatedInventory;
+          const allocationChanged =
+            existingInventory.allocatedToListingId !==
+            updatedInventory.allocatedToListingId;
+          const statusChanged = existingInventory.status !== updatedInventory.status;
+
+          const affectedListingIds = new Set<string>();
+          if (allocationChanged || statusChanged) {
+            if (existingInventory.allocatedToListingId) {
+              affectedListingIds.add(existingInventory.allocatedToListingId);
+            }
+            if (updatedInventory.allocatedToListingId) {
+              affectedListingIds.add(updatedInventory.allocatedToListingId);
+            }
+          }
+
+          return {
+            updatedInventory,
+            affectedListingIds: [...affectedListingIds],
+          };
         });
+
+        if (updateResult.affectedListingIds.length > 0) {
+          await Promise.allSettled(
+            updateResult.affectedListingIds.map(async (listingId) =>
+              syncEbayQuantityForListing(listingId),
+            ),
+          );
+        }
+
+        return updateResult.updatedInventory;
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update inventory item",
@@ -330,6 +392,26 @@ export const inventoryRouter = createTRPCRouter({
       const { id } = input;
 
       try {
+        const part = await ctx.db.part.findUnique({
+          where: { id },
+          select: {
+            status: true,
+            allocatedToListingId: true,
+          },
+        });
+        if (!part) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Inventory item not found",
+          });
+        }
+        if (part.status !== PartStatus.AVAILABLE) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Only AVAILABLE parts can be deleted.",
+          });
+        }
+
         // Delete related images first
         await ctx.db.image.deleteMany({
           where: { partId: id },
@@ -339,8 +421,17 @@ export const inventoryRouter = createTRPCRouter({
           where: { id },
         });
 
+        if (part.allocatedToListingId) {
+          await syncEbayQuantityForListing(part.allocatedToListingId).catch((error) => {
+            console.error("eBay quantity sync failed after inventory delete", error);
+          });
+        }
+
         return { success: true };
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to delete inventory item",

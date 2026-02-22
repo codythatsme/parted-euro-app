@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { type Prisma } from "@prisma/client";
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "../trpc";
 import { TRPCError } from "@trpc/server";
 import { signOut } from "~/server/auth";
@@ -56,7 +55,7 @@ export const userRouter = createTRPCRouter({
 
       return updatedUser;
     }),
-  signOut: protectedProcedure.mutation(async ({ ctx }) => {
+  signOut: protectedProcedure.mutation(async () => {
     await signOut();
   }),
 });

@@ -14,10 +14,6 @@ export type XeroItem = {
   unitAmount: number;
   accountCode: string;
   lineAmount?: number;
-  tracking?: {
-    name: string;
-    option: string;
-  }[];
 };
 
 type CreateInvoiceOptions = {
@@ -161,15 +157,7 @@ export const createInvoiceFromStripeEvent = async (
         quantity: item.quantity ?? 1,
         unitAmount: item.price!.unit_amount! / 100,
         accountCode: "200",
-        tracking: [
-          {
-            name: "VIN",
-            // @ts-expect-error: bad types on stripe event
-            // eslint-disable-next-line
-            option: item.price.product.metadata.VIN.slice(-7),
-          },
-        ],
-      } as XeroItem;
+      };
     });
 
     let shipping;
@@ -181,7 +169,6 @@ export const createInvoiceFromStripeEvent = async (
         quantity: 1,
         unitAmount: event.shipping_cost.amount_total / 100,
         accountCode: "210",
-        lineAmount: event.shipping_cost.amount_total / 100,
       });
     }
 
@@ -237,68 +224,8 @@ export const createInvoiceFromStripeEvent = async (
       },
     });
 
-    //   update orderitems
-
-    const orderItems = await db.orderItem.findMany({
-      where: {
-        orderId: event.metadata!.orderId!,
-      },
-      include: {
-        listing: true,
-      },
-    });
-
-    for (const item of orderItems) {
-      const listing = item.listing.id;
-      const listingItems = await db.listing.findUnique({
-        where: {
-          id: listing,
-        },
-        include: {
-          parts: {
-            orderBy: {
-              createdAt: "asc", // FIFO - oldest parts first
-            },
-          },
-        },
-      });
-
-      // Allocate inventory using FIFO approach
-      let remainingQuantityToAllocate = item.quantity;
-
-      for (const part of listingItems!.parts) {
-        if (remainingQuantityToAllocate <= 0) break;
-
-        const quantityToReduceFromThisPart = Math.min(
-          part.quantity,
-          remainingQuantityToAllocate,
-        );
-
-        if (quantityToReduceFromThisPart > 0) {
-          await db.listing.update({
-            where: {
-              id: listing,
-            },
-            data: {
-              parts: {
-                update: {
-                  where: {
-                    id: part.id,
-                  },
-                  data: {
-                    quantity: part.quantity - quantityToReduceFromThisPart,
-                  },
-                },
-              },
-            },
-          });
-
-          remainingQuantityToAllocate -= quantityToReduceFromThisPart;
-        }
-      }
-    }
     return;
-  } catch (err) {
+  } catch (_err) {
     // write event and lineitems to db
     await db.failedOrder.create({
       data: {

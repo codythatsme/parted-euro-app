@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { X, ShoppingBag, Trash2, Plus, Minus, Loader2 } from "lucide-react";
 import { formatCurrency } from "~/lib/utils";
 import { api } from "~/trpc/react";
@@ -207,8 +207,8 @@ function CartItemDisplay({
   onUpdateQuantity,
 }: {
   item: PopulatedCartItem;
-  onRemove: () => Promise<void>;
-  onUpdateQuantity: (quantity: number) => Promise<void>;
+  onRemove: () => Promise<unknown>;
+  onUpdateQuantity: (quantity: number) => Promise<unknown>;
 }) {
   const [isRemoving, setIsRemoving] = useState(false);
   const [isIncLoading, setIsIncLoading] = useState(false);

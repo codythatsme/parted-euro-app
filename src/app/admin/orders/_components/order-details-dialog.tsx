@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -50,11 +49,11 @@ const getStatusBadge = (status: string) => {
   }
 };
 
-interface OrderDetailsDialogProps {
+type OrderDetailsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   order: AdminOrdersItem;
-}
+};
 
 export function OrderDetailsDialog({
   open,
@@ -71,7 +70,7 @@ export function OrderDetailsDialog({
   });
 
   const subtotal = order.subtotal;
-  const shipping = order.shipping * 100 || 0;
+  const shipping = (order.shipping ?? 0) * 100;
   const total = subtotal + shipping;
 
   return (
@@ -107,7 +106,7 @@ export function OrderDetailsDialog({
             <div className="rounded-md border p-3">
               <p className="text-sm">
                 <span className="font-medium">Method:</span>{" "}
-                {order.shippingMethod || "Not specified"}
+                {order.shippingMethod ?? "Not specified"}
               </p>
               {order.shippingAddress && (
                 <p className="text-sm">
@@ -154,25 +153,36 @@ export function OrderDetailsDialog({
                           {item.listing.title}
                           <div className="max-w-[300px] truncate text-xs text-muted-foreground">
                             Part #:{" "}
-                            {[
-                              ...new Set(
-                                item.listing.parts.map(
-                                  (p) => p.partDetails.partNo,
-                                ),
-                              ),
-                            ].join(",")}
+                            {item.allocatedParts
+                              .map((allocated) => allocated.part.partDetails.partNo)
+                              .join(", ")}
+                          </div>
+                          <div className="max-w-[300px] truncate text-xs text-muted-foreground">
+                            Donor VIN:{" "}
+                            {item.allocatedParts
+                              .map((allocated) => allocated.part.donor?.vin ?? "N/A")
+                              .join(", ")}
+                          </div>
+                          <div className="max-w-[300px] truncate text-xs text-muted-foreground">
+                            Location:{" "}
+                            {item.allocatedParts
+                              .map(
+                                (allocated) =>
+                                  allocated.part.inventoryLocation?.name ?? "N/A",
+                              )
+                              .join(", ")}
                           </div>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatPrice(item.listing.price)}
+                      {formatPrice(item.unitPrice ?? item.listing.price)}
                     </TableCell>
                     <TableCell className="text-center">
                       {item.quantity}
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatPrice(item.listing.price * item.quantity)}
+                      {formatPrice((item.unitPrice ?? item.listing.price) * item.quantity)}
                     </TableCell>
                   </TableRow>
                 ))}
