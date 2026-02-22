@@ -176,7 +176,6 @@ export const inventoryRouter = createTRPCRouter({
                   inventoryData.allocatedToListingId === "none"
                     ? null
                     : inventoryData.allocatedToListingId,
-                quantity: 1,
                 images: images
                   ? {
                       createMany: {
@@ -261,7 +260,6 @@ export const inventoryRouter = createTRPCRouter({
                 updateData.allocatedToListingId === "none"
                   ? null
                   : updateData.allocatedToListingId,
-              quantity: 1,
             },
             include: {
               partDetails: true,

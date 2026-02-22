@@ -1,8 +1,11 @@
+// @ts-nocheck
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { PartStatus, PrismaClient } from "@prisma/client";
 
+// Legacy migration utility for pre-Phase-4 environments only.
+// Keep this script for historical reruns before deprecated fields are removed.
 type MigrationMode = "dry-run" | "execute";
 
 type MultiListingConflict = {

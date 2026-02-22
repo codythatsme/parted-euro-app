@@ -388,8 +388,8 @@ export const donorRouter = createTRPCRouter({
       const parts = await ctx.db.part.findMany({
         where: {
           donorVin: input.vin,
-          listing: {
-            some: {
+          allocatedToListing: {
+            is: {
               active: true,
             },
           },
@@ -404,7 +404,7 @@ export const donorRouter = createTRPCRouter({
               },
             },
           },
-          listing: {
+          allocatedToListing: {
             include: {
               images: {
                 orderBy: {
@@ -418,24 +418,31 @@ export const donorRouter = createTRPCRouter({
       });
 
       // Transform the data to match the expected format
-      const listings = parts.flatMap((part) =>
-        part.listing.map((listing) => ({
-          id: listing.id,
-          title: listing.title,
-          price: listing.price,
-          description: listing.description,
-          imageUrl: listing.images[0]?.url ?? null,
-          partCategoryId: part.partDetails.partTypes[0]?.id ?? "",
-          partSubcategoryId: part.partDetails.partTypes[0]?.parentId ?? "",
-          partCategory: {
-            name: part.partDetails.partTypes[0]?.name ?? "Uncategorized",
-          },
-          partSubcategory: {
-            name:
-              part.partDetails.partTypes[0]?.parent?.name ?? "Uncategorized",
-          },
-        })),
-      );
+      const listings = parts
+        .map((part) => {
+          const listing = part.allocatedToListing;
+          if (!listing) {
+            return null;
+          }
+
+          return {
+            id: listing.id,
+            title: listing.title,
+            price: listing.price,
+            description: listing.description,
+            imageUrl: listing.images[0]?.url ?? null,
+            partCategoryId: part.partDetails.partTypes[0]?.id ?? "",
+            partSubcategoryId: part.partDetails.partTypes[0]?.parentId ?? "",
+            partCategory: {
+              name: part.partDetails.partTypes[0]?.name ?? "Uncategorized",
+            },
+            partSubcategory: {
+              name:
+                part.partDetails.partTypes[0]?.parent?.name ?? "Uncategorized",
+            },
+          };
+        })
+        .filter((listing): listing is NonNullable<typeof listing> => !!listing);
 
       return listings;
     }),
