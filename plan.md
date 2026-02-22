@@ -336,7 +336,7 @@ After Phase 3 is stable in production:
 3. Drop implicit m2m `_ListingToPart` junction table (remove `listing Listing[]` from old Part model)
 4. Make `OrderItem.unitPrice` non-nullable (fill any remaining nulls first)
 
-Run: `bunx prisma migrate dev --name remove-deprecated-inventory-fields`
+Run: `bunx run db:p ush`
 
 ---
 
