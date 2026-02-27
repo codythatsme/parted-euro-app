@@ -314,22 +314,26 @@ function PickSheetDocument({ order, logoSrc }: PickSheetDocumentProps) {
   );
 }
 
+export async function downloadPickSheet(order: AdminOrdersItem) {
+  const logoSrc = `${window.location.origin}/logo.png`;
+  const blob = await pdf(
+    <PickSheetDocument order={order} logoSrc={logoSrc} />,
+  ).toBlob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `pick-sheet-${order.xeroInvoiceRef ?? order.id}.pdf`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function PickSheetButton({ order }: { order: AdminOrdersItem }) {
   const [loading, setLoading] = useState(false);
 
   const handleClick = async () => {
     setLoading(true);
     try {
-      const logoSrc = `${window.location.origin}/logo.png`;
-      const blob = await pdf(
-        <PickSheetDocument order={order} logoSrc={logoSrc} />,
-      ).toBlob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `pick-sheet-${order.xeroInvoiceRef ?? order.id}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadPickSheet(order);
     } finally {
       setLoading(false);
     }

@@ -7,6 +7,7 @@ import {
   CircleDot,
   DollarSign,
   Eye,
+  FileText,
   MoreHorizontal,
   MoreVertical,
   Package,
@@ -28,6 +29,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { Badge } from "~/components/ui/badge";
 import { type AdminOrdersItem } from "~/trpc/shared";
+import { downloadPickSheet } from "./pick-sheet-pdf";
 import { DataTableColumnHeader } from "~/components/data-table/data-table-column-header";
 
 // Format currency
@@ -321,6 +323,11 @@ export function getOrderColumns({
               <DropdownMenuItem onClick={() => onViewDetails(order)}>
                 <Eye className="mr-2 h-4 w-4" />
                 View Details
+              </DropdownMenuItem>
+
+              <DropdownMenuItem onClick={() => void downloadPickSheet(order)}>
+                <FileText className="mr-2 h-4 w-4" />
+                Print Pick Sheet
               </DropdownMenuItem>
 
               <DropdownMenuItem onClick={() => onAddTracking(order)}>
