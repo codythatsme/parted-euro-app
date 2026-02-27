@@ -17,6 +17,7 @@ import {
 } from "~/components/ui/table";
 import { Badge } from "~/components/ui/badge";
 import { type AdminOrdersItem } from "~/trpc/shared";
+import { PickSheetButton } from "./pick-sheet-pdf";
 
 // Format currency
 const formatter = new Intl.NumberFormat("en-AU", {
@@ -84,7 +85,10 @@ export function OrderDetailsDialog({
                 {order.id}
               </span>
             </div>
-            <Badge variant={getStatusBadge(order.status)}>{order.status}</Badge>
+            <div className="flex items-center gap-2">
+              <PickSheetButton order={order} />
+              <Badge variant={getStatusBadge(order.status)}>{order.status}</Badge>
+            </div>
           </DialogTitle>
           <DialogDescription>Order placed on {formattedDate}</DialogDescription>
         </DialogHeader>
