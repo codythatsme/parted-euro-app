@@ -31,6 +31,8 @@ import {
 } from "~/components/ui/table";
 import { Input } from "~/components/ui/input";
 import { DataTablePagination } from "./data-table-pagination";
+import { DataTableFilter } from "~/components/data-table-filter";
+import { filterFn } from "~/lib/filters";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -74,9 +76,20 @@ export function DataTable<TData, TValue>({
   const [rowSelection, setRowSelection] = React.useState({});
   const [expanded, setExpanded] = React.useState<ExpandedState>({});
 
+  const columnsWithFilterFns = React.useMemo(
+    () =>
+      columns.map((col) => {
+        if (col.meta?.type && !col.filterFn) {
+          return { ...col, filterFn: filterFn(col.meta.type) }
+        }
+        return col
+      }),
+    [columns],
+  );
+
   const table = useReactTable({
     data,
-    columns,
+    columns: columnsWithFilterFns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: (value: string) => void setGlobalFilter(value),
@@ -121,7 +134,7 @@ export function DataTable<TData, TValue>({
   // When the global search changes, reset to the first page for better UX
   React.useEffect(() => {
     table.setPageIndex(0);
-  }, [globalFilter]);
+  }, [globalFilter, columnFilters]);
 
   // Update the parent component when selection changes
   React.useEffect(() => {
@@ -135,16 +148,17 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="flex w-full items-center justify-between">
-        <div>
+      <div className="flex w-full items-start gap-4">
+        <div className="min-w-0 flex-1">
+          <DataTableFilter table={table} />
           {table.getFilteredSelectedRowModel().rows.length > 0 && (
-            <p className="text-sm text-muted-foreground">
+            <p className="mt-2 text-sm text-muted-foreground">
               {table.getFilteredSelectedRowModel().rows.length} of{" "}
               {table.getFilteredRowModel().rows.length} row(s) selected
             </p>
           )}
         </div>
-        <div className="relative max-w-sm">
+        <div className="relative max-w-sm shrink-0">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search..."

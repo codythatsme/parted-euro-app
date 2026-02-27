@@ -1,4 +1,5 @@
 'use client'
+'use no memo'
 
 import { Button } from '~/components/ui/button'
 import { Calendar } from '~/components/ui/calendar'
@@ -432,10 +433,10 @@ function renderFilter<TData, T extends ColumnDataType>(
       <Separator orientation="vertical" />
       <Button
         variant="ghost"
-        className="rounded-none rounded-r-2xl text-xs w-7 h-full"
+        className="rounded-none rounded-r-2xl text-xs w-7 h-full p-0"
         onClick={() => table.getColumn(filter.id)?.setFilterValue(undefined)}
       >
-        <X className="size-4 -translate-x-0.5" />
+        <X className="size-4" />
       </Button>
     </div>
   )

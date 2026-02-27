@@ -1,7 +1,7 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { ExternalLink, MoreHorizontal, Pencil, Trash } from "lucide-react";
+import { DollarSign, ExternalLink, MoreHorizontal, Package, Pencil, Store, Trash } from "lucide-react";
 import { Link } from "~/components/link";
 import { DataTableColumnHeader } from "~/components/data-table/data-table-column-header";
 import { Button } from "~/components/ui/button";
@@ -95,6 +95,11 @@ export function getListingColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Price" />
       ),
+      meta: {
+        displayName: "Price",
+        icon: DollarSign,
+        type: "number",
+      },
       cell: ({ row }) => (
         <span className="font-mono text-xs">{formatter.format(row.original.price)}</span>
       ),
@@ -104,6 +109,11 @@ export function getListingColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Stock" />
       ),
+      meta: {
+        displayName: "Stock",
+        icon: Package,
+        type: "number",
+      },
       cell: ({ row }) => <span className="font-mono text-xs">{row.original.stock ?? 0}</span>,
     },
     {
@@ -111,6 +121,15 @@ export function getListingColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="eBay" />
       ),
+      meta: {
+        displayName: "eBay Status",
+        icon: Store,
+        type: "option",
+        transformOptionFn: (val) => ({
+          label: val ? "Listed" : "Not listed",
+          value: val ? "true" : "false",
+        }),
+      },
       cell: ({ row }) => (
         <span className="text-xs">{row.original.listedOnEbay ? "Listed" : "Not listed"}</span>
       ),

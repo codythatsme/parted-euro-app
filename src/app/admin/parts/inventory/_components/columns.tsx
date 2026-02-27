@@ -1,7 +1,7 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { Copy, MoreHorizontal, Pencil, Tag, Trash } from "lucide-react";
+import { Calendar, CircleDot, Copy, MapPin, MoreHorizontal, Pencil, Tag, Trash } from "lucide-react";
 import { DataTableColumnHeader } from "~/components/data-table/data-table-column-header";
 import { Button } from "~/components/ui/button";
 import {
@@ -59,6 +59,15 @@ export function getInventoryColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Location" />
       ),
+      meta: {
+        displayName: "Location",
+        icon: MapPin,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s, value: s };
+        },
+      },
       cell: ({ row }) => row.original.inventoryLocation?.name ?? "Not assigned",
     },
     {
@@ -66,6 +75,17 @@ export function getInventoryColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Status" />
       ),
+      meta: {
+        displayName: "Status",
+        icon: CircleDot,
+        type: "option",
+        options: [
+          { label: "Available", value: "AVAILABLE" },
+          { label: "Reserved", value: "RESERVED" },
+          { label: "Sold", value: "SOLD" },
+          { label: "Returned", value: "RETURNED" },
+        ],
+      },
       cell: ({ row }) => (
         <span
           className={`rounded px-2 py-1 text-xs font-medium ${statusClass(row.original.status)}`}
@@ -94,6 +114,11 @@ export function getInventoryColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Date Added" />
       ),
+      meta: {
+        displayName: "Date Added",
+        icon: Calendar,
+        type: "date",
+      },
       cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString(),
     },
     {

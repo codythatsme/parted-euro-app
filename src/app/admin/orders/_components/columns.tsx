@@ -2,15 +2,18 @@
 
 import { type ColumnDef } from "@tanstack/react-table";
 import {
-  MoreHorizontal,
-  Eye,
-  Truck,
-  Package,
-  MoreVertical,
+  Calendar,
   Check,
-  X,
+  CircleDot,
+  DollarSign,
+  Eye,
+  MoreHorizontal,
+  MoreVertical,
+  Package,
   Pencil,
   RefreshCw,
+  Truck,
+  X,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
@@ -95,6 +98,11 @@ export function getOrderColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Created At" />
       ),
+      meta: {
+        displayName: "Created At",
+        icon: Calendar,
+        type: "date",
+      },
       cell: ({ row }) => {
         const date = new Date(row.original.createdAt);
         return date.toLocaleDateString("en-US", {
@@ -124,6 +132,20 @@ export function getOrderColumns({
     {
       accessorKey: "status",
       header: "Status",
+      meta: {
+        displayName: "Status",
+        icon: CircleDot,
+        type: "option",
+        options: [
+          { label: "Pending", value: "Pending" },
+          { label: "Paid", value: "Paid" },
+          { label: "Processing", value: "Processing" },
+          { label: "Shipped", value: "Shipped" },
+          { label: "Ready for pickup", value: "Ready for pickup" },
+          { label: "COMPLETED", value: "COMPLETED" },
+          { label: "Cancelled", value: "Cancelled" },
+        ],
+      },
       cell: ({ row }) => {
         const status = row.original.status;
         return (
@@ -134,6 +156,15 @@ export function getOrderColumns({
     {
       accessorKey: "shippingMethod",
       header: "Shipping",
+      meta: {
+        displayName: "Shipping",
+        icon: Truck,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s, value: s };
+        },
+      },
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span>{row.original.shippingMethod ?? ""}</span>
@@ -261,6 +292,11 @@ export function getOrderColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Total" />
       ),
+      meta: {
+        displayName: "Total",
+        icon: DollarSign,
+        type: "number",
+      },
       cell: ({ row }) => {
         const subtotal = row.original.subtotal;
         const shipping = row.original.shipping * 100 || 0;

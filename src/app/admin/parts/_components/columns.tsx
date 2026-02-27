@@ -1,7 +1,7 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronRight, Hash, MoreHorizontal, Type } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import {
@@ -61,12 +61,22 @@ export const getUnifiedPartColumns = ({
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Part Number" />
     ),
+    meta: {
+      displayName: "Part Number",
+      icon: Hash,
+      type: "text",
+    },
   },
   {
     accessorKey: "name",
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Name" />
     ),
+    meta: {
+      displayName: "Name",
+      icon: Type,
+      type: "text",
+    },
   },
   {
     id: "inventoryCounts",

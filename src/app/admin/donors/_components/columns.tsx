@@ -2,7 +2,7 @@ import { type ColumnDef } from "@tanstack/react-table";
 import { Button } from "~/components/ui/button";
 import { type Car, type Donor, type Image } from "@prisma/client";
 import { formatDate, formatCurrency } from "~/lib/utils";
-import { MoreHorizontal, Pencil, Trash } from "lucide-react";
+import { Calendar, Car as CarIcon, Hash, Layers, MoreHorizontal, Pencil, Shapes, Trash } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +43,15 @@ export function getDonorColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Make" />
       ),
+      meta: {
+        displayName: "Make",
+        icon: CarIcon,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s, value: s };
+        },
+      },
       cell: ({ row }) => {
         const car = row.original.car;
         return <div>{car.make}</div>;
@@ -54,6 +63,15 @@ export function getDonorColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Series" />
       ),
+      meta: {
+        displayName: "Series",
+        icon: Layers,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s, value: s };
+        },
+      },
       cell: ({ row }) => {
         const car = row.original.car;
         return <div>{car.series}</div>;
@@ -65,6 +83,15 @@ export function getDonorColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Generation" />
       ),
+      meta: {
+        displayName: "Generation",
+        icon: Shapes,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s, value: s };
+        },
+      },
       cell: ({ row }) => {
         const car = row.original.car;
         return <div>{car.generation}</div>;
@@ -86,6 +113,11 @@ export function getDonorColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Year" />
       ),
+      meta: {
+        displayName: "Year",
+        icon: Hash,
+        type: "number",
+      },
       cell: ({ row }) => <div>{row.original.year}</div>,
     },
     {
@@ -107,6 +139,11 @@ export function getDonorColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Date In Stock" />
       ),
+      meta: {
+        displayName: "Date In Stock",
+        icon: Calendar,
+        type: "date",
+      },
       cell: ({ row }) => {
         const date = row.original.dateInStock;
         return date ? <div>{formatDate(date)}</div> : <div>-</div>;
