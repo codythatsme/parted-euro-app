@@ -803,11 +803,7 @@ export function PartInventoryForm({
       const isEditing = mode.kind === "editInventory";
 
       // Determine if we need to create a new part
-      const needsNewPart =
-        isNewPart ||
-        (isDuplicating &&
-          partDetails &&
-          hasPartFieldChanges(values, partDetails, selectedCars, selectedPartTypes));
+      const needsNewPart = isNewPart;
 
       if (needsNewPart) {
         const newPart = await createPartMutation.mutateAsync({
@@ -888,7 +884,6 @@ export function PartInventoryForm({
       // Existing part — maybe update part fields if changed
       const hasChanges =
         initialPartValues &&
-        !isDuplicating &&
         hasPartValueChanges(values, initialPartValues, selectedCars, selectedPartTypes);
 
       if (hasChanges && values.partDetailsId) {
@@ -1011,19 +1006,12 @@ export function PartInventoryForm({
       : modeHasInventory(mode);
 
   const partFieldsReadOnly =
-    mode.kind === "addPart"
-      ? existingPartSelected
-      : mode.kind !== "editPart" && !isNewPart && mode.kind !== "editInventory";
+    mode.kind === "addPart" ? existingPartSelected : false;
 
   const showPartSearch = modeHasPartSearch(mode);
 
   // Whether editing part fields is allowed in inventory modes
-  const canEditPartFields =
-    mode.kind === "addPart" ||
-    mode.kind === "editPart" ||
-    isNewPart ||
-    mode.kind === "editInventory" ||
-    mode.kind === "duplicateInventory";
+  const canEditPartFields = true;
 
   // ── Render ───────────────────────────────────────────────
 
@@ -1198,13 +1186,7 @@ export function PartInventoryForm({
                                   placeholder="Enter part number"
                                   {...field}
                                   value={field.value ?? ""}
-                                  disabled={
-                                    mode.kind === "editPart" ||
-                                    (!isNewPart &&
-                                      !["editInventory", "duplicateInventory"].includes(
-                                        mode.kind,
-                                      ))
-                                  }
+                                  disabled={!(isNewPart && mode.kind === "addInventory")}
                                 />
                               </FormControl>
                               <FormMessage />
