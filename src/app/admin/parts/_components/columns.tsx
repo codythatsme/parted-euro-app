@@ -71,6 +71,8 @@ export const getUnifiedPartColumns = ({
   },
   {
     accessorKey: "name",
+    size: 300,
+    minSize: 200,
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Name" />
     ),
