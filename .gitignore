@@ -44,6 +44,7 @@ yarn-error.log*
 
 # database dumps
 *.dump
+backups/
 
 # idea files
 .idea
