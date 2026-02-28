@@ -6,99 +6,161 @@ import {
   Img,
   Link,
   Preview,
+  Section,
   Text,
 } from "@react-email/components";
 import * as React from "react";
-import type { Order } from "@prisma/client";
-type NewOrderEmailprops = {
-  order: Order;
+import { type OrderWithItems } from "~/server/db/order-includes";
+
+type NewOrderEmailProps = {
+  order: OrderWithItems;
 };
 
-const baseUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "";
+const formatCurrency = (amount: number) =>
+  amount.toLocaleString("en-AU", { style: "currency", currency: "AUD" });
 
-export const NewOrderEmail = ({ order }: NewOrderEmailprops) => (
-  <Html>
-    <Head />
-    <Preview>New order placed!</Preview>
-    <Body style={main}>
-      <Container style={container}>
-        <Img
-          src={`${baseUrl}/_next/static/media/logo.2d624463.png`}
-          width="160"
-          height="32"
-          alt="Parted Euro Logo"
-        />
-        <Text style={{ ...text }}>Hi Huddy</Text>
-        <Text style={{ ...text, marginBottom: "14px" }}>
-          Great News! You are ${order.subtotal / 100} richer.
-        </Text>
-        <Link
-          style={link}
-          href={`https://www.partedeuro.com.au/admin/orders?orderId=${order.id}`}
-        >
-          View
-        </Link>
-      </Container>
-    </Body>
-  </Html>
-);
+export const NewOrderEmail = ({ order }: NewOrderEmailProps) => {
+  const subtotalDollars = (order.subtotal ?? 0) / 100;
+  const shippingDollars = order.shipping ?? 0;
+  const totalDollars = subtotalDollars + shippingDollars;
+  const orderRef = order.xeroInvoiceId ?? order.id;
+  const date = new Date(order.createdAt).toLocaleDateString("en-AU", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  return (
+    <Html>
+      <Head />
+      <Preview>
+        Hark! A new commission of {formatCurrency(totalDollars)} hath arrived!
+      </Preview>
+      <Body style={main}>
+        <Container style={container}>
+          <Img
+            src="https://www.partedeuro.com.au/logo.png"
+            width="160"
+            height="32"
+            alt="Parted Euro"
+          />
+
+          <Text style={heading}>A Commission Most Fortuitous!</Text>
+
+          <Text style={text}>
+            Esteemed Proprietor,
+          </Text>
+
+          <Text style={text}>
+            It is with the utmost pleasure and considerable satisfaction that I write to
+            inform you of a most auspicious occurrence. A distinguished patron by the name
+            of <strong>{order.name}</strong> has, upon this very day of{" "}
+            <strong>{date}</strong>, seen fit to bestow upon our establishment a commission
+            of no trifling consequence.
+          </Text>
+
+          <Section style={summaryBox}>
+            <Text style={summaryLine}>
+              <strong>Order Reference:</strong> {orderRef}
+            </Text>
+            <Text style={summaryLine}>
+              <strong>Patron:</strong> {order.name}
+            </Text>
+            <Text style={summaryLine}>
+              <strong>Sum of Goods:</strong> {formatCurrency(subtotalDollars)}
+            </Text>
+            {shippingDollars > 0 ? (
+              <Text style={summaryLine}>
+                <strong>Carriage:</strong> {formatCurrency(shippingDollars)}
+              </Text>
+            ) : null}
+            <Text style={summaryLine}>
+              <strong>Grand Total:</strong> {formatCurrency(totalDollars)}
+            </Text>
+            <Text style={summaryLine}>
+              <strong>Articles Ordered:</strong> {order.orderItems.length}
+            </Text>
+          </Section>
+
+          <Text style={text}>
+            The annexed Pick Sheet, dutifully appended to this correspondence, contains the
+            full particulars of the items required for fulfilment. I trust you shall attend
+            to the matter with your customary diligence and expediency.
+          </Text>
+
+          <Link
+            style={link}
+            href={`https://www.partedeuro.com.au/admin/orders?orderId=${order.id}`}
+          >
+            View the Order in the Ledger &raquo;
+          </Link>
+
+          <Text style={text}>
+            Your most humble and obedient servant,
+          </Text>
+          <Text style={{ ...text, fontStyle: "italic" }}>
+            The Automated Clerk of Parted Euro
+          </Text>
+        </Container>
+      </Body>
+    </Html>
+  );
+};
 
 export default NewOrderEmail;
 
 const main = {
-  backgroundColor: "#ffffff",
+  backgroundColor: "#faf9f6",
+  fontFamily: "Georgia, 'Times New Roman', Times, serif",
 };
 
 const container = {
-  paddingLeft: "12px",
-  paddingRight: "12px",
+  paddingLeft: "20px",
+  paddingRight: "20px",
+  paddingTop: "20px",
+  paddingBottom: "20px",
   margin: "0 auto",
+  maxWidth: "580px",
 };
 
-const _h1 = {
-  color: "#333",
-  fontFamily:
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
-  fontSize: "24px",
-  fontWeight: "bold",
-  margin: "40px 0",
-  padding: "0",
-};
-
-const link = {
-  color: "#2754C5",
-  fontFamily:
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
-  fontSize: "14px",
-  textDecoration: "underline",
+const heading = {
+  color: "#2c1810",
+  fontFamily: "Georgia, 'Times New Roman', Times, serif",
+  fontSize: "22px",
+  fontWeight: "bold" as const,
+  margin: "30px 0 10px",
+  textAlign: "center" as const,
 };
 
 const text = {
-  color: "#333",
-  fontFamily:
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
+  color: "#2c1810",
+  fontFamily: "Georgia, 'Times New Roman', Times, serif",
   fontSize: "14px",
-  margin: "24px 0",
+  lineHeight: "24px",
+  margin: "16px 0",
 };
 
-const _footer = {
-  color: "#898989",
-  fontFamily:
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
-  fontSize: "12px",
+const summaryBox = {
+  backgroundColor: "#f0ebe3",
+  borderLeft: "3px solid #8b7355",
+  padding: "16px 20px",
+  margin: "20px 0",
+  borderRadius: "2px",
+};
+
+const summaryLine = {
+  color: "#2c1810",
+  fontFamily: "Georgia, 'Times New Roman', Times, serif",
+  fontSize: "13px",
   lineHeight: "22px",
-  marginTop: "12px",
-  marginBottom: "24px",
+  margin: "4px 0",
 };
 
-const _code = {
-  display: "inline-block",
-  padding: "16px 4.5%",
-  width: "90.5%",
-  backgroundColor: "#f4f4f4",
-  borderRadius: "5px",
-  border: "1px solid #eee",
-  color: "#333",
+const link = {
+  color: "#6b4226",
+  fontFamily: "Georgia, 'Times New Roman', Times, serif",
+  fontSize: "14px",
+  textDecoration: "underline",
+  display: "inline-block" as const,
+  margin: "10px 0",
 };

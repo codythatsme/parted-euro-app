@@ -1,7 +1,13 @@
 import { Resend } from "resend";
+import { renderToBuffer } from "@react-pdf/renderer";
 import NewOrderEmail from "./emails/OrderPlaced";
-import type { Order } from "@prisma/client";
-import { type OrderWithItems } from "~/trpc/shared";
+import { type OrderWithItems as TrpcOrderWithItems } from "~/trpc/shared";
+import { db } from "~/server/db";
+import {
+  orderWithItemsInclude,
+  type OrderWithItems,
+} from "~/server/db/order-includes";
+import { PickSheetDocument } from "~/lib/pick-sheet-document";
 
 const baseUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
@@ -13,7 +19,7 @@ const formatCurrency = (amount: number) =>
     currency: "AUD",
   });
 
-function generateOrderEmailHTML(order: OrderWithItems): string {
+function generateOrderEmailHTML(order: TrpcOrderWithItems): string {
   if (!order) throw new Error("Order not found");
   const orderItemsHTML = order.orderItems
     .map(
@@ -144,7 +150,7 @@ function generateOrderEmailHTML(order: OrderWithItems): string {
 }
 
 // Main function to generate the email HTML
-function generatePickupOrderEmailHTML(order: OrderWithItems): string {
+function generatePickupOrderEmailHTML(order: TrpcOrderWithItems): string {
   if (!order) throw new Error("Order not found");
   const orderItemsHTML = order.orderItems
     .map(
@@ -272,7 +278,7 @@ function generatePickupOrderEmailHTML(order: OrderWithItems): string {
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-export const sendOrderShippedEmail = async (order: OrderWithItems) => {
+export const sendOrderShippedEmail = async (order: TrpcOrderWithItems) => {
   if (!order?.email) return;
   const { data, error } = await resend.emails.send({
     from: "contact@partedeuro.com.au",
@@ -286,7 +292,7 @@ export const sendOrderShippedEmail = async (order: OrderWithItems) => {
   return data;
 };
 
-export const sendOrderReadyForPickupEmail = async (order: OrderWithItems) => {
+export const sendOrderReadyForPickupEmail = async (order: TrpcOrderWithItems) => {
   if (!order?.email) return;
   const { data, error } = await resend.emails.send({
     from: "contact@partedeuro.com.au",
@@ -300,12 +306,53 @@ export const sendOrderReadyForPickupEmail = async (order: OrderWithItems) => {
   return data;
 };
 
-export const sendNewOrderEmail = async (order: Order) => {
+async function generatePickSheetBuffer(
+  order: OrderWithItems,
+): Promise<Buffer | null> {
+  try {
+    const logoSrc = "https://www.partedeuro.com.au/logo.png";
+    const subtotalDollars = (order.subtotal ?? 0) / 100;
+    const shippingDollars = order.shipping ?? 0;
+
+    const buffer = await renderToBuffer(
+      <PickSheetDocument
+        order={order}
+        logoSrc={logoSrc}
+        subtotalDollars={subtotalDollars}
+        shippingDollars={shippingDollars}
+      />,
+    );
+    return Buffer.from(buffer);
+  } catch (err) {
+    console.error("Failed to generate pick sheet PDF:", err);
+    return null;
+  }
+}
+
+export const sendNewOrderEmail = async (orderId: string) => {
+  const order = await db.order.findUnique({
+    where: { id: orderId },
+    include: orderWithItemsInclude,
+  });
+
+  if (!order) {
+    console.error(`sendNewOrderEmail: order ${orderId} not found`);
+    return;
+  }
+
+  const orderRef = order.xeroInvoiceId ?? order.id;
+  const pdfBuffer = await generatePickSheetBuffer(order);
+
+  const attachments = pdfBuffer
+    ? [{ filename: `pick-sheet-${orderRef}.pdf`, content: pdfBuffer }]
+    : [];
+
   const { data, error } = await resend.emails.send({
     from: "contact@partedeuro.com.au",
     to: "contact@partedeuro.com.au",
-    subject: `Yo!!! New order ${order.xeroInvoiceId} placed!`,
+    subject: `Hear Ye! A New Commission (${orderRef}) Hath Been Placed!`,
     react: <NewOrderEmail order={order} />,
+    attachments,
   });
   if (error) {
     console.error(error);

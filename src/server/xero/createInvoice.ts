@@ -140,7 +140,7 @@ export const createXeroInvoice = async (input: CreateInvoiceOptions) => {
       shippingRateId,
     },
   });
-  void sendNewOrderEmail(order);
+  void sendNewOrderEmail(order.id);
   void xero.accountingApi.emailInvoice(activeTenantId, xeroInvoiceId, {});
 };
 

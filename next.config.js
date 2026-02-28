@@ -16,6 +16,7 @@ const config = {
   experimental: {
     reactCompiler: true,
   },
+  serverExternalPackages: ["@react-pdf/renderer"],
   images: {
     domains: ["res.cloudinary.com", "utfs.io"],
   },

@@ -4,6 +4,7 @@ import {
   sendOrderReadyForPickupEmail,
   sendOrderShippedEmail,
 } from "../../resend/resend";
+import { orderWithItemsInclude } from "../../db/order-includes";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET!, {
@@ -83,50 +84,7 @@ export const ordersRouter = createTRPCRouter({
         },
       },
       orderBy: [{ createdAt: "desc" }],
-      include: {
-        orderItems: {
-          include: {
-            listing: {
-              include: {
-                images: {
-                  select: {
-                    url: true,
-                  },
-                  orderBy: {
-                    order: "asc",
-                  },
-                  take: 1,
-                },
-              },
-            },
-            allocatedParts: {
-              include: {
-                part: {
-                  include: {
-                    donor: {
-                      select: {
-                        vin: true,
-                      },
-                    },
-                    inventoryLocation: {
-                      select: {
-                        id: true,
-                        name: true,
-                      },
-                    },
-                    partDetails: {
-                      select: {
-                        partNo: true,
-                        name: true,
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      include: orderWithItemsInclude,
     });
 
     return {
