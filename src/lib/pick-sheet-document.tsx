@@ -226,7 +226,7 @@ export function PickSheetDocument({
               <Text style={styles.headerText}>Part #</Text>
             </View>
             <View style={styles.colVin}>
-              <Text style={styles.headerText}>Donor VIN</Text>
+              <Text style={styles.headerText}>Identifier</Text>
             </View>
             <View style={styles.colLocation}>
               <Text style={styles.headerText}>Location</Text>
