@@ -1,6 +1,14 @@
 import '@tanstack/table-core'
-import type { AccessorFn, Column, Row, RowData } from '@tanstack/react-table'
+import type {
+  AccessorFn,
+  Column,
+  ColumnDef,
+  ColumnFiltersState,
+  Row,
+  RowData,
+} from '@tanstack/react-table'
 import type { ColumnMeta, Table } from '@tanstack/react-table'
+import { z } from 'zod'
 import {
   endOfDay,
   isAfter,
@@ -941,4 +949,143 @@ export function getColumnMeta<TData>(table: Table<TData>, id: string) {
   }
 
   return column.columnDef.meta
+}
+
+/*** URL Serialization ***/
+
+/* Shape of a FilterModel's serializable fields (used as a type guard target) */
+interface SerializableFilterModel {
+  operator: string
+  values: unknown[]
+  columnMeta: { type: string }
+}
+
+function isSerializableFilterModel(
+  value: unknown,
+): value is SerializableFilterModel {
+  if (typeof value !== 'object' || value === null) return false
+  if (
+    !('operator' in value) ||
+    !('values' in value) ||
+    !('columnMeta' in value)
+  )
+    return false
+  const op = value.operator
+  const vals = value.values
+  const meta = value.columnMeta
+  if (typeof op !== 'string' || !Array.isArray(vals)) return false
+  if (typeof meta !== 'object' || meta === null || !('type' in meta))
+    return false
+  return typeof meta.type === 'string'
+}
+
+function isColumnDataType(value: string): value is ColumnDataType {
+  return value in filterTypeOperatorDetails
+}
+
+function getColumnDefId<TData, TValue>(
+  col: ColumnDef<TData, TValue>,
+): string | undefined {
+  if (col.id) return col.id
+  if ('accessorKey' in col) return String(col.accessorKey)
+  return undefined
+}
+
+const serializedFilterEntrySchema = z.object({
+  op: z.string(),
+  v: z.array(z.unknown()),
+  t: z.string(),
+})
+
+const serializedFiltersSchema = z.record(
+  z.string(),
+  serializedFilterEntrySchema,
+)
+
+/**
+ * Serializes column filters to a compact JSON string for URL persistence.
+ * Strips non-serializable columnMeta and converts Date values to ISO strings.
+ */
+export function serializeColumnFilters(
+  filters: ColumnFiltersState,
+): string {
+  const result: Record<
+    string,
+    z.infer<typeof serializedFilterEntrySchema>
+  > = {}
+
+  for (const { id, value } of filters) {
+    if (!isSerializableFilterModel(value)) continue
+    const type = value.columnMeta.type
+    if (!isColumnDataType(type)) continue
+
+    result[id] = {
+      op: value.operator,
+      v:
+        type === 'date'
+          ? value.values.map((v) =>
+              v instanceof Date ? v.toISOString() : v,
+            )
+          : value.values,
+      t: type,
+    }
+  }
+
+  return JSON.stringify(result)
+}
+
+/**
+ * Deserializes column filters from a URL parameter string.
+ * Validates operators, reconstructs Date objects, and reattaches columnMeta.
+ * Silently drops filters for unknown columns or invalid operators.
+ */
+export function deserializeColumnFilters<TData, TValue>(
+  raw: string,
+  columns: ReadonlyArray<ColumnDef<TData, TValue>>,
+): ColumnFiltersState {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+
+  const result = serializedFiltersSchema.safeParse(parsed)
+  if (!result.success) return []
+
+  const metaMap = new Map<
+    string,
+    NonNullable<ColumnDef<TData, TValue>['meta']>
+  >()
+  for (const col of columns) {
+    const colId = getColumnDefId(col)
+    if (colId && col.meta) {
+      metaMap.set(colId, col.meta)
+    }
+  }
+
+  const filters: ColumnFiltersState = []
+
+  for (const [id, entry] of Object.entries(result.data)) {
+    if (!isColumnDataType(entry.t)) continue
+
+    const meta = metaMap.get(id)
+    if (!meta) continue
+    if (meta.type !== entry.t) continue
+    if (!(entry.op in filterTypeOperatorDetails[entry.t])) continue
+
+    const values =
+      entry.t === 'date'
+        ? entry.v.map((val) =>
+            typeof val === 'string' ? new Date(val) : val,
+          )
+        : entry.v
+
+    filters.push({
+      id,
+      value: { operator: entry.op, values, columnMeta: meta },
+    })
+  }
+
+  return filters
 }

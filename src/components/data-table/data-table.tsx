@@ -31,8 +31,13 @@ import {
 } from "~/components/ui/table";
 import { Input } from "~/components/ui/input";
 import { DataTablePagination } from "./data-table-pagination";
+import { useQueryState } from "nuqs";
 import { DataTableFilter } from "~/components/data-table-filter";
-import { filterFn } from "~/lib/filters";
+import {
+  deserializeColumnFilters,
+  filterFn,
+  serializeColumnFilters,
+} from "~/lib/filters";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -68,8 +73,32 @@ export function DataTable<TData, TValue>({
   globalFilterFn,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    [],
+
+  const [filtersParam, setFiltersParam] = useQueryState("filters", {
+    defaultValue: "",
+  });
+
+  const columnFilters = React.useMemo(
+    () =>
+      filtersParam
+        ? deserializeColumnFilters(filtersParam, columns)
+        : [],
+    [filtersParam, columns],
+  );
+
+  const handleColumnFiltersChange = React.useCallback(
+    (
+      updater:
+        | ColumnFiltersState
+        | ((old: ColumnFiltersState) => ColumnFiltersState),
+    ) => {
+      const next =
+        typeof updater === "function" ? updater(columnFilters) : updater;
+      void setFiltersParam(
+        next.length === 0 ? null : serializeColumnFilters(next),
+      );
+    },
+    [columnFilters, setFiltersParam],
   );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>(initialColumnVisibility ?? {});
@@ -91,7 +120,7 @@ export function DataTable<TData, TValue>({
     data,
     columns: columnsWithFilterFns,
     onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
+    onColumnFiltersChange: handleColumnFiltersChange,
     onGlobalFilterChange: (value: string) => void setGlobalFilter(value),
     ...(globalFilterFn != null && { globalFilterFn }),
     getCoreRowModel: getCoreRowModel(),
