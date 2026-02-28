@@ -490,6 +490,18 @@ export function PartInventoryForm({
     }
   }, [isNewPart, mode.kind, existingPartSelected, shouldCreateInventory]);
 
+  // addPart mode: autocomplete handler
+  const handleAutocompleteSelect = useCallback(
+    (partNo: string) => {
+      setExistingPartSelected(true);
+      form.setValue("partNo", partNo);
+      form.setValue("createInventory", true);
+      setPartSearchOpen(false);
+      setSearchTerm("");
+    },
+    [form],
+  );
+
   // Auto-detect exact match for typed part number
   useEffect(() => {
     if (mode.kind !== "addPart") return;
@@ -635,18 +647,6 @@ export function PartInventoryForm({
     setSelectedPartTypes([]);
     setPartSearchOpen(false);
   };
-
-  // addPart mode: autocomplete handler
-  const handleAutocompleteSelect = useCallback(
-    (partNo: string) => {
-      setExistingPartSelected(true);
-      form.setValue("partNo", partNo);
-      form.setValue("createInventory", true);
-      setPartSearchOpen(false);
-      setSearchTerm("");
-    },
-    [form],
-  );
 
   const handleClearExistingPart = () => {
     setExistingPartSelected(false);
