@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Copy, MoreHorizontal, Pencil, Plus, Tag, Trash } from "lucide-react";
 import { type AdminInventoryItem } from "~/trpc/shared";
 import { Button } from "~/components/ui/button";
@@ -94,12 +95,16 @@ export function InventoryExpandedPanel({
                     </TableCell>
                     <TableCell>
                       {item.allocatedToListing
-                        ? <>
+                        ? <Link
+                            href={`/listings/${item.allocatedToListing.id}`}
+                            className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
+                            target="_blank"
+                          >
                             {item.allocatedToListing.title}
                             <span className="ml-1 text-muted-foreground">
                               (${item.allocatedToListing.price.toFixed(2)})
                             </span>
-                          </>
+                          </Link>
                         : "Unallocated"}
                     </TableCell>
                     <TableCell>{item.donorVin ?? "-"}</TableCell>
