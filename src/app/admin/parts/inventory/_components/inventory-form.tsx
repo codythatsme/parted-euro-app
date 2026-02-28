@@ -573,6 +573,7 @@ export function InventoryForm({
         donorVin: defaultValues?.donorVin ?? null,
         inventoryLocationId: defaultValues?.inventoryLocationId ?? null,
         variant: defaultValues?.variant ?? null,
+        status: defaultValues?.status ?? "AVAILABLE",
         count: 1,
         isNewPart: false,
         partNo: "",

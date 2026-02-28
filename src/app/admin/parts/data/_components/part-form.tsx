@@ -42,6 +42,13 @@ import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/utils";
 import { type Part } from "./columns";
 import { FilterableCarSelect } from "~/components/ui/filterable-car-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { VirtualizedCombobox } from "~/components/ui/virtualized-combobox";
 import { ListingForm } from "~/app/admin/listings/_components/listing-form";
 
@@ -64,6 +71,9 @@ const formSchema = z.object({
   inventoryDonorVin: z.string().optional().nullable(),
   inventoryLocationId: z.string().optional().nullable(),
   inventoryVariant: z.string().optional().nullable(),
+  inventoryStatus: z
+    .enum(["AVAILABLE", "RESERVED", "SOLD", "RETURNED"])
+    .default("AVAILABLE"),
   inventoryCount: z.coerce.number().int().min(1).default(1),
 });
 
@@ -142,6 +152,7 @@ export function PartForm({
       inventoryDonorVin: null,
       inventoryLocationId: null,
       inventoryVariant: null,
+      inventoryStatus: "AVAILABLE" as const,
       inventoryCount: 1,
     },
   });
@@ -163,6 +174,7 @@ export function PartForm({
         inventoryDonorVin: null,
         inventoryLocationId: null,
         inventoryVariant: null,
+      inventoryStatus: "AVAILABLE" as const,
         inventoryCount: 1,
       });
       setSelectedCars(defaultValues.cars.map((car) => car.id));
@@ -183,6 +195,7 @@ export function PartForm({
         inventoryDonorVin: null,
         inventoryLocationId: null,
         inventoryVariant: null,
+      inventoryStatus: "AVAILABLE" as const,
         inventoryCount: 1,
       });
       setSelectedCars([]);
@@ -294,6 +307,7 @@ export function PartForm({
           donorVin: values.inventoryDonorVin,
           inventoryLocationId: values.inventoryLocationId,
           variant: values.inventoryVariant,
+          status: values.inventoryStatus,
           count: values.inventoryCount,
         });
 
@@ -693,6 +707,36 @@ export function PartForm({
                         )}
                       />
                     </div>
+
+                    <FormField
+                      control={form.control}
+                      name="inventoryStatus"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                            defaultValue={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="AVAILABLE">
+                                Available
+                              </SelectItem>
+                              <SelectItem value="RESERVED">Reserved</SelectItem>
+                              <SelectItem value="SOLD">Sold</SelectItem>
+                              <SelectItem value="RETURNED">Returned</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
                     <FormField
                       control={form.control}
