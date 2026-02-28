@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { VirtualizedCombobox } from "~/components/ui/virtualized-combobox";
 import { api } from "~/trpc/react";
 import { type AdminListingsItem } from "~/trpc/shared";
 import { toast } from "sonner";
@@ -311,23 +312,13 @@ export function ListingForm({
                         render={({ field: componentField }) => (
                           <FormItem>
                             <FormLabel className="text-xs">Part Detail</FormLabel>
-                            <Select
+                            <VirtualizedCombobox
+                              options={partDetails}
                               value={componentField.value}
-                              onValueChange={componentField.onChange}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select part detail" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {partDetails.map((part) => (
-                                  <SelectItem key={part.value} value={part.value}>
-                                    {part.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              onChange={componentField.onChange}
+                              placeholder="Select part detail"
+                              searchPlaceholder="Search parts..."
+                            />
                             <FormMessage />
                           </FormItem>
                         )}
