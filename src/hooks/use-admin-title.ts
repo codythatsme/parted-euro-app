@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 export function useAdminTitle(pageName: string) {
   useEffect(() => {
-    document.title = `Admin - ${pageName}`;
+    document.title = `${pageName} - Admin`;
     
     // Cleanup function to reset title when component unmounts
     return () => {
