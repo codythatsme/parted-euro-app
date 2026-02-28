@@ -153,7 +153,9 @@ export function ListOnEbayDialog({
       toast.error(error.message);
     },
   });
-  const fulfillmentPolicies = api.ebay.getFulfillmentPolicies.useQuery();
+  const fulfillmentPolicies = api.ebay.getFulfillmentPolicies.useQuery(undefined, {
+    enabled: open,
+  });
   const categoryIds = api.ebay.getCategoryIds.useQuery(
     {
       title: categorySearchTerm,
