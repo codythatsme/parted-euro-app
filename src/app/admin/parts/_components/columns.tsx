@@ -192,7 +192,7 @@ export const getUnifiedPartColumns = ({
     cell: () => null,
     enableSorting: false,
     meta: {
-      displayName: "Allocation",
+      displayName: "Listed/Unlisted",
       icon: Tag,
       type: "option",
       options: [
