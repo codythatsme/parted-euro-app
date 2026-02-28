@@ -114,11 +114,20 @@ export default function PartsPage() {
           .length,
       };
 
+      let lastInventoryAdded: Date | null = null;
+      for (const item of inventoryItems) {
+        const d = new Date(item.createdAt);
+        if (!lastInventoryAdded || d > lastInventoryAdded) {
+          lastInventoryAdded = d;
+        }
+      }
+
       return {
         ...part,
         inventoryItems,
         inventoryCounts,
         inventorySearchText: inventoryItems.map(buildInventorySearchText).join(" "),
+        lastInventoryAdded,
       };
     });
   }, [inventoryQuery.data, partsQuery.data?.items]);

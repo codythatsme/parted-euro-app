@@ -25,6 +25,7 @@ export type UnifiedPartRow = PartDefinition & {
     returned: number;
   };
   inventorySearchText: string;
+  lastInventoryAdded: Date | null;
 };
 
 type UnifiedColumnsProps = {
@@ -107,6 +108,25 @@ export const getUnifiedPartColumns = ({
           )}
         </div>
       );
+    },
+  },
+  {
+    accessorKey: "lastInventoryAdded",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Last Added" />
+    ),
+    cell: ({ row }) => {
+      const value = row.original.lastInventoryAdded;
+      if (!value) return "-";
+      return new Date(value).toLocaleDateString();
+    },
+    sortingFn: (rowA, rowB) => {
+      const a = rowA.original.lastInventoryAdded;
+      const b = rowB.original.lastInventoryAdded;
+      if (!a && !b) return 0;
+      if (!a) return 1;
+      if (!b) return -1;
+      return a.getTime() - b.getTime();
     },
   },
   {
