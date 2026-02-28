@@ -92,7 +92,16 @@ export function InventoryExpandedPanel({
                         {item.status}
                       </span>
                     </TableCell>
-                    <TableCell>{item.allocatedToListing?.title ?? "Unallocated"}</TableCell>
+                    <TableCell>
+                      {item.allocatedToListing
+                        ? <>
+                            {item.allocatedToListing.title}
+                            <span className="ml-1 text-muted-foreground">
+                              (${item.allocatedToListing.price.toFixed(2)})
+                            </span>
+                          </>
+                        : "Unallocated"}
+                    </TableCell>
                     <TableCell>{item.donorVin ?? "-"}</TableCell>
                     <TableCell>
                       {new Date(item.createdAt).toLocaleDateString()}

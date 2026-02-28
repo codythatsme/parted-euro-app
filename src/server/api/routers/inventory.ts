@@ -138,6 +138,7 @@ export const inventoryRouter = createTRPCRouter({
           select: {
             id: true,
             title: true,
+            price: true,
           },
         },
         images: {
