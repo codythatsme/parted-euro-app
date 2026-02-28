@@ -1,7 +1,7 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { ChevronRight, Hash, MoreHorizontal, Type } from "lucide-react";
+import { ChevronRight, Hash, MoreHorizontal, Tag, Type } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import {
@@ -149,6 +149,32 @@ export const getUnifiedPartColumns = ({
     header: "",
     cell: () => null,
     enableSorting: false,
+  },
+  {
+    id: "allocationStatus",
+    accessorFn: (row) => {
+      if (row.inventoryCounts.total === 0) return "NO_INVENTORY";
+      const availableItems = row.inventoryItems.filter(
+        (i) => i.status === "AVAILABLE",
+      );
+      if (availableItems.length === 0) return "ALL_ALLOCATED";
+      return availableItems.some((i) => !i.allocatedToListingId)
+        ? "HAS_UNALLOCATED"
+        : "ALL_ALLOCATED";
+    },
+    header: "",
+    cell: () => null,
+    enableSorting: false,
+    meta: {
+      displayName: "Allocation",
+      icon: Tag,
+      type: "option",
+      options: [
+        { label: "No inventory", value: "NO_INVENTORY" },
+        { label: "Unlisted", value: "HAS_UNALLOCATED" },
+        { label: "All listed", value: "ALL_ALLOCATED" },
+      ],
+    },
   },
   {
     id: "actions",
