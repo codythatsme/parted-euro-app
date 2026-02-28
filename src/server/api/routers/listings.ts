@@ -86,6 +86,9 @@ export const listingsRouter = createTRPCRouter({
       orderBy: {
         createdAt: "desc",
       },
+      where: {
+        active: true,
+      },
       include: {
         components: {
           include: {
