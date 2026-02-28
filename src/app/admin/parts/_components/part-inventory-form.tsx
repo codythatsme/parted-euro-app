@@ -502,6 +502,7 @@ export function PartInventoryForm({
     [form],
   );
 
+  
   // Auto-detect exact match for typed part number
   useEffect(() => {
     if (mode.kind !== "addPart") return;
