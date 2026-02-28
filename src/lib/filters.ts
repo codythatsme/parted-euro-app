@@ -633,7 +633,7 @@ export function optionFilterFn<TData>(
 ) {
   const value = row.getValue(columnId)
 
-  if (!value) return false
+  if (value === null || value === undefined) return false
 
   const columnMeta = filterValue.columnMeta!
 
@@ -694,7 +694,7 @@ export function multiOptionFilterFn<TData>(
 ) {
   const value = row.getValue(columnId)
 
-  if (!value) return false
+  if (value === null || value === undefined) return false
 
   const columnMeta = filterValue.columnMeta!
 
