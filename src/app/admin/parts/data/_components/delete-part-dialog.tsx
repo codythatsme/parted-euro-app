@@ -13,12 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import { type Part } from "./columns";
-
 interface DeletePartDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  part: Part;
+  part: { partNo: string; name: string };
 }
 
 export function DeletePartDialog({

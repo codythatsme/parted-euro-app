@@ -40,6 +40,7 @@ export const getUnifiedPartColumns = ({
   {
     id: "expander",
     header: "",
+    size: 40,
     cell: ({ row }) => (
       <Button
         type="button"
@@ -140,6 +141,7 @@ export const getUnifiedPartColumns = ({
   },
   {
     accessorKey: "dimensions",
+    size: 120,
     header: "Dimensions (LxWxH)",
     cell: ({ row }) => {
       const part = row.original;
@@ -148,6 +150,7 @@ export const getUnifiedPartColumns = ({
   },
   {
     accessorKey: "weight",
+    size: 80,
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Weight" />
     ),
@@ -155,6 +158,7 @@ export const getUnifiedPartColumns = ({
   },
   {
     accessorKey: "costPrice",
+    size: 80,
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Cost" />
     ),
@@ -198,6 +202,7 @@ export const getUnifiedPartColumns = ({
   },
   {
     id: "actions",
+    size: 40,
     cell: ({ row }) => (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
