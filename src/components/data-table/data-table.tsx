@@ -51,6 +51,7 @@ interface DataTableProps<TData, TValue> {
   pageSize: number;
   setPageSize: (value: number | null) => void;
   initialColumnVisibility?: VisibilityState;
+  initialSorting?: SortingState;
   getRowCanExpand?: (row: TData) => boolean;
   renderExpandedRow?: (row: Row<TData>) => React.ReactNode;
   globalFilterFn?: FilterFn<TData>;
@@ -68,11 +69,12 @@ export function DataTable<TData, TValue>({
   pageSize,
   setPageSize,
   initialColumnVisibility,
+  initialSorting,
   getRowCanExpand,
   renderExpandedRow,
   globalFilterFn,
 }: DataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [sorting, setSorting] = React.useState<SortingState>(initialSorting ?? []);
 
   const [filtersParam, setFiltersParam] = useQueryState("filters", {
     defaultValue: "",
