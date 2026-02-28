@@ -203,7 +203,7 @@ export default function PartsPage() {
           setPageSize={setPageSize}
           enableRowSelection={false}
           globalFilterFn={partsGlobalFilterFn}
-          initialColumnVisibility={{ inventorySearchText: false, allocationStatus: false }}
+          initialColumnVisibility={{ inventorySearchText: false, location: false, allocationStatus: false }}
           initialSorting={[{ id: "lastInventoryAdded", desc: true }]}
           getRowCanExpand={() => true}
           renderExpandedRow={(row) => (

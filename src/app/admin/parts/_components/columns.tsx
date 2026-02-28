@@ -1,7 +1,7 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { ChevronRight, Hash, MoreHorizontal, Tag, Type } from "lucide-react";
+import { ChevronRight, Hash, MapPin, MoreHorizontal, Tag, Type } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import {
@@ -180,6 +180,23 @@ export const getUnifiedPartColumns = ({
     header: "",
     cell: () => null,
     enableSorting: false,
+  },
+  {
+    id: "location",
+    accessorFn: (row) => {
+      const names = row.inventoryItems
+        .map((i) => i.inventoryLocation?.name ?? "Not assigned");
+      return [...new Set(names)];
+    },
+    header: "",
+    cell: () => null,
+    enableSorting: false,
+    meta: {
+      displayName: "Location",
+      icon: MapPin,
+      type: "multiOption",
+      transformOptionFn: (value: string) => ({ label: value, value }),
+    },
   },
   {
     id: "allocationStatus",
