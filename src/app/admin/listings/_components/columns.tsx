@@ -1,7 +1,7 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { DollarSign, ExternalLink, MoreHorizontal, Package, Pencil, RotateCcw, Store, Trash } from "lucide-react";
+import { Calendar, DollarSign, ExternalLink, MoreHorizontal, Package, Pencil, RotateCcw, Store, Trash } from "lucide-react";
 import { Link } from "~/components/link";
 import { DataTableColumnHeader } from "~/components/data-table/data-table-column-header";
 import { Button } from "~/components/ui/button";
@@ -118,6 +118,26 @@ export function getListingColumns({
         type: "number",
       },
       cell: ({ row }) => <span className="font-mono text-xs">{row.original.stock ?? 0}</span>,
+    },
+    {
+      accessorKey: "createdAt",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Listed On" />
+      ),
+      meta: {
+        displayName: "Listed On",
+        icon: Calendar,
+        type: "date",
+      },
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {new Date(row.original.createdAt).toLocaleDateString("en-AU", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })}
+        </span>
+      ),
     },
     {
       accessorKey: "listedOnEbay",
