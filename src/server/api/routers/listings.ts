@@ -350,19 +350,6 @@ export const listingsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const orderItemCount = await ctx.db.orderItem.count({
-        where: {
-          listingId: input.id,
-        },
-      });
-
-      if (orderItemCount > 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Cannot delete listing with order history. Retire it instead.",
-        });
-      }
-
       const listing = await ctx.db.listing.update({
         where: {
           id: input.id,
