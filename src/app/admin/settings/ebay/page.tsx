@@ -13,6 +13,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useAdminTitle } from "~/hooks/use-admin-title";
 import { Textarea } from "~/components/ui/textarea";
 
@@ -32,6 +33,17 @@ export default function EbaySettingsPage() {
   const saveTemplate = api.ebay.saveListingTemplate.useMutation({
     onSuccess: () => {
       void templateQuery.refetch();
+    },
+  });
+  const regenerate = api.ebay.regenerateAllDescriptions.useMutation({
+    onSuccess: (data) => {
+      toast.success(
+        `Updated ${data.succeeded}/${data.total} listings` +
+          (data.failed > 0 ? ` (${data.failed} failed)` : ""),
+      );
+    },
+    onError: (err) => {
+      toast.error(err.message);
     },
   });
 
@@ -177,6 +189,30 @@ export default function EbaySettingsPage() {
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Bulk Update Listings</CardTitle>
+          <CardDescription>
+            Push the current template to all published eBay listings.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            onClick={() => regenerate.mutate()}
+            disabled={regenerate.isPending}
+          >
+            {regenerate.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Updating listings…
+              </>
+            ) : (
+              "Apply Template to All Listings"
+            )}
+          </Button>
         </CardContent>
       </Card>
     </div>

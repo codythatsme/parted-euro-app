@@ -142,6 +142,28 @@ const renderTemplate = (
 };
 
 
+const buildPartsTableHtml = (
+  cars: { series: string; generation: string; model: string }[],
+) => {
+  const unique = cars.filter(
+    (car, i, self) =>
+      i ===
+      self.findIndex(
+        (x) =>
+          x.series === car.series &&
+          x.generation === car.generation &&
+          x.model === car.model,
+      ),
+  );
+  const rows = unique
+    .map(
+      (car) =>
+        `<tr style="padding:1rem; border-bottom: 1px solid #ddd"><td>${car.series}</td><td>${car.generation}</td><td>${car.model}</td></tr>`,
+    )
+    .join("");
+  return `<table style="padding:1rem; text-align:center; max-width:40rem;"><thead><tr style="border-bottom: 1px solid #ddd"><th style="padding:1rem;">Series</th><th>Generation</th><th>Model</th></tr></thead><tbody>${rows}</tbody></table>`;
+};
+
 const getListingStockSnapshot = async (listingId: string) => {
   const listing = await db.listing.findUnique({
     where: {
@@ -820,5 +842,62 @@ export const ebayRouter = createTRPCRouter({
     );
     const createdLocation = await ebay.sell.inventory.getInventoryLocations();
     return createdLocation.locations[0].merchantLocationKey;
+  }),
+  regenerateAllDescriptions: adminProcedure.mutation(async ({ ctx }) => {
+    await initEbayClient();
+
+    const listings = await ctx.db.listing.findMany({
+      where: {
+        listedOnEbay: true,
+        ebayOfferId: { not: null },
+      },
+      select: {
+        id: true,
+        description: true,
+        ebayOfferId: true,
+        components: {
+          select: {
+            partDetail: {
+              select: {
+                cars: {
+                  select: { series: true, generation: true, model: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const settings = await ctx.db.ebaySettings.findFirst();
+    const template =
+      settings?.listingTemplate ?? DEFAULT_EBAY_LISTING_TEMPLATE;
+
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const listing of listings) {
+      try {
+        const cars = listing.components.flatMap(
+          (c) => c.partDetail.cars,
+        );
+        const partsTable = buildPartsTableHtml(cars);
+        const listingDescription = renderTemplate(template, {
+          DESCRIPTION: listing.description,
+          PARTS_TABLE: partsTable,
+        });
+
+        const offerId = listing.ebayOfferId;
+        if (!offerId) continue;
+        const offer = await ebay.sell.inventory.getOffer(offerId);
+        offer.listingDescription = listingDescription;
+        await ebay.sell.inventory.updateOffer(offerId, offer);
+        succeeded++;
+      } catch {
+        failed++;
+      }
+    }
+
+    return { total: listings.length, succeeded, failed };
   }),
 });
