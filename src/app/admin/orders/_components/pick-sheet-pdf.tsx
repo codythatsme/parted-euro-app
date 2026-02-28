@@ -321,11 +321,7 @@ export async function downloadPickSheet(order: AdminOrdersItem) {
     <PickSheetDocument order={order} logoSrc={logoSrc} />,
   ).toBlob();
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `pick-sheet-${order.xeroInvoiceRef ?? order.id}.pdf`;
-  a.click();
-  URL.revokeObjectURL(url);
+  window.open(url, "_blank");
 }
 
 export function PickSheetButton({ order }: { order: AdminOrdersItem }) {
