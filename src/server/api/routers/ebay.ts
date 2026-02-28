@@ -878,25 +878,30 @@ export const ebayRouter = createTRPCRouter({
     let succeeded = 0;
     let failed = 0;
 
-    for (const listing of listings) {
-      try {
-        const cars = listing.components.flatMap(
-          (c) => c.partDetail.cars,
-        );
-        const partsTable = buildPartsTableHtml(cars);
-        const listingDescription = renderTemplate(template, {
-          DESCRIPTION: listing.description,
-          PARTS_TABLE: partsTable,
-        });
+    const BATCH_SIZE = 25;
+    for (let i = 0; i < listings.length; i += BATCH_SIZE) {
+      const batch = listings.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async (listing) => {
+          const cars = listing.components.flatMap(
+            (c) => c.partDetail.cars,
+          );
+          const partsTable = buildPartsTableHtml(cars);
+          const listingDescription = renderTemplate(template, {
+            DESCRIPTION: listing.description,
+            PARTS_TABLE: partsTable,
+          });
 
-        const offerId = listing.ebayOfferId;
-        if (!offerId) continue;
-        const offer = await ebay.sell.inventory.getOffer(offerId);
-        offer.listingDescription = listingDescription;
-        await ebay.sell.inventory.updateOffer(offerId, offer);
-        succeeded++;
-      } catch {
-        failed++;
+          const offerId = listing.ebayOfferId;
+          if (!offerId) return;
+          const offer = await ebay.sell.inventory.getOffer(offerId);
+          offer.listingDescription = listingDescription;
+          await ebay.sell.inventory.updateOffer(offerId, offer);
+        }),
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled") succeeded++;
+        else failed++;
       }
     }
 
