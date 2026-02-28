@@ -159,6 +159,7 @@ const getListingStockSnapshot = async (listingId: string) => {
           partDetail: {
             select: {
               partNo: true,
+              alternatePartNumbers: true,
             },
           },
         },
@@ -187,10 +188,26 @@ const getListingStockSnapshot = async (listingId: string) => {
     inventoryParts: listing.allocatedParts,
   });
 
+  // Collect all part numbers: each component's partNo + its alternates
+  const allMpns = listing.components.flatMap((c) => {
+    const numbers = [c.partDetail.partNo];
+    if (c.partDetail.alternatePartNumbers) {
+      numbers.push(
+        ...c.partDetail.alternatePartNumbers
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      );
+    }
+    return numbers;
+  });
+  const uniqueMpns = [...new Set(allMpns)];
+
   return {
     listing,
     quantity,
     primaryPartNo: listing.components[0]?.partDetail.partNo ?? "",
+    allMpns: uniqueMpns,
   };
 };
 
@@ -402,6 +419,7 @@ export const ebayRouter = createTRPCRouter({
               // @ts-expect-error: TODO: Has updated api broke this?
               aspects: {
                 Brand: ["BMW"],
+                "Manufacturer Part Number": snapshot.allMpns,
               },
               mpn: derivedPartNo,
               brand: "BMW",
