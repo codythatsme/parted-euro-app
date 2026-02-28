@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any, @typescript-eslint/no-misused-promises, @typescript-eslint/prefer-nullish-coalescing, @typescript-eslint/no-unused-vars */
 import { z } from "zod";
 import { adminProcedure, createTRPCRouter } from "../trpc";
-import eBayApi from "ebay-api";
 import type {
   FulfillmentPolicyRequest,
   InventoryLocationFull,
 } from "ebay-api/lib/types";
 import type {
   Condition,
-  ContentLanguage,
   CurrencyCode,
   FormatType,
   Marketplace,
@@ -16,7 +14,7 @@ import type {
 } from "ebay-api/lib/enums";
 import { CategoryType, TimeDurationUnit } from "ebay-api/lib/enums";
 import { db } from "~/server/db";
-import { type AuthToken } from "ebay-api/auth/oAuth2.js";
+import { ebay, initEbayClient } from "~/server/lib/ebay-client";
 import { calculateRequiredPartCounts, calculateStock } from "~/server/lib/stock";
 import { PartStatus } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
@@ -143,33 +141,6 @@ const renderTemplate = (
   return output;
 };
 
-// Init ebay
-const ebay = eBayApi.fromEnv();
-ebay.config.acceptLanguage = "en-AU";
-ebay.config.contentLanguage = "en-AU" as ContentLanguage;
-ebay.config.marketplaceId = "EBAY_AU" as MarketplaceId;
-
-const initEbay = async () => {
-  const token = await db.ebayCreds.findFirst();
-  if (!token) throw new Error("Ebay credentials not found");
-  const tokenSet = token.refreshToken as AuthToken;
-  if (
-    new Date(token.updatedAt).getTime() + tokenSet.expires_in! * 1000 <
-    Date.now()
-  ) {
-    const updatedTokenSet = (await ebay.OAuth2.refreshToken()) as AuthToken;
-    await db.ebayCreds.update({
-      where: {
-        id: token.id,
-      },
-      data: {
-        refreshToken: updatedTokenSet,
-      },
-    });
-    return ebay.OAuth2.setCredentials(updatedTokenSet);
-  }
-  ebay.OAuth2.setCredentials(tokenSet);
-};
 
 const getListingStockSnapshot = async (listingId: string) => {
   const listing = await db.listing.findUnique({
@@ -280,7 +251,7 @@ export const ebayRouter = createTRPCRouter({
       };
     }),
   testEbayConnection: adminProcedure.query(async ({ ctx }) => {
-    await initEbay();
+    await initEbayClient();
     const paymentPolicies =
       await ebay.sell.account.getPaymentPolicies("EBAY_AU");
     return !!paymentPolicies.paymentPolicies[0]?.paymentPolicyId;
@@ -294,7 +265,7 @@ export const ebayRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      await initEbay();
+      await initEbayClient();
       const res = await ebay.commerce.taxonomy.getCategorySuggestions(
         "15",
         input.title,
@@ -336,7 +307,7 @@ export const ebayRouter = createTRPCRouter({
       console.log("====================INPUT=====================");
       console.log(input);
       console.log("====================INPUT=====================");
-      await initEbay();
+      await initEbayClient();
       const snapshot = await getListingStockSnapshot(input.listingId);
       const quantity = snapshot.quantity;
       const derivedPartNo = snapshot.primaryPartNo || input.partNo || "";
@@ -498,7 +469,7 @@ export const ebayRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ input }) => {
-      await initEbay();
+      await initEbayClient();
       const snapshot = await getListingStockSnapshot(input.listingId);
       const offerId = snapshot.listing.ebayOfferId;
       if (!snapshot.listing.listedOnEbay || !offerId) {
@@ -695,7 +666,7 @@ export const ebayRouter = createTRPCRouter({
       };
     }),
   getFulfillmentPolicies: adminProcedure.query(async ({ ctx }) => {
-    await initEbay();
+    await initEbayClient();
     const fulfillmentPolicies = (await ebay.sell.account.getFulfillmentPolicies(
       "EBAY_AU",
     )) as FulfillmentPolicyResponse;
@@ -714,7 +685,7 @@ export const ebayRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      await initEbay();
+      await initEbayClient();
       const offers = await ebay.sell.inventory.getOffers({
         sku: input.sku,
       });
@@ -752,7 +723,7 @@ export const ebayRouter = createTRPCRouter({
     )
     .mutation(async ({ input, ctx }) => {
       const offer = await ebay.sell.inventory.getOffer(input.offerId);
-      await initEbay();
+      await initEbayClient();
       try {
         const publishOffer = await ebay.sell.inventory.publishOffer(
           input.offerId,
@@ -764,7 +735,7 @@ export const ebayRouter = createTRPCRouter({
     }),
 
   getInventroyItems: adminProcedure.query(async ({ ctx }) => {
-    await initEbay();
+    await initEbayClient();
     const listings = await ebay.sell.inventory.getInventoryItems();
     return listings;
   }),
@@ -774,20 +745,8 @@ export const ebayRouter = createTRPCRouter({
         id: z.string(),
       }),
     )
-    .query(async ({ input, ctx }) => {
-      const token = await ctx.db.ebayCreds.findFirst();
-      ebay.OAuth2.setCredentials(token?.refreshToken as any);
-      ebay.OAuth2.on("refreshAuthToken", async (token) => {
-        const creds = await ctx.db.ebayCreds.findFirst();
-        const updatedCreds = await ctx.db.ebayCreds.update({
-          where: {
-            id: creds?.id,
-          },
-          data: {
-            refreshToken: token,
-          },
-        });
-      });
+    .query(async ({ input }) => {
+      await initEbayClient();
       const offers = await ebay.sell.inventory.getOffer(input.id);
       return offers;
     }),
@@ -798,25 +757,25 @@ export const ebayRouter = createTRPCRouter({
       }),
     )
     .query(async ({ input, ctx }) => {
-      await initEbay();
+      await initEbayClient();
       const offers = await ebay.sell.inventory.getOffers({
         sku: input.sku,
       });
       return offers;
     }),
   getPaymentPolicy: adminProcedure.mutation(async ({ ctx }) => {
-    await initEbay();
+    await initEbayClient();
     const paymentPolicies =
       await ebay.sell.account.getPaymentPolicies("EBAY_AU");
     return paymentPolicies.paymentPolicies[0].paymentPolicyId;
   }),
   getReturnPolicy: adminProcedure.mutation(async ({ ctx }) => {
-    await initEbay();
+    await initEbayClient();
     const returnPolicies = await ebay.sell.account.getReturnPolicies("EBAY_AU");
     return returnPolicies.returnPolicies[0].returnPolicyId;
   }),
   createInventoryLocation: adminProcedure.mutation(async ({ ctx }) => {
-    await initEbay();
+    await initEbayClient();
     const inventoryLocation = await ebay.sell.inventory.getInventoryLocations();
     if (inventoryLocation.total > 0) {
       return inventoryLocation.locations[0].merchantLocationKey;
