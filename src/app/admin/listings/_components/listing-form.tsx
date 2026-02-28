@@ -68,7 +68,10 @@ export function ListingForm({
 }: ListingFormProps) {
   const utils = api.useUtils();
   const { data: partDetails = [] } = api.part.getAllPartDetails.useQuery();
-  const { data: inventoryItems = [] } = api.inventory.getAll.useQuery();
+  const { data: inventoryItems = [] } =
+    api.inventory.getAvailableForAllocation.useQuery({
+      listingId: defaultValues?.id,
+    });
   const createMutation = api.listings.create.useMutation();
   const updateMutation = api.listings.update.useMutation();
   const allocateMutation = api.listings.allocateInventory.useMutation();
@@ -129,13 +132,7 @@ export function ListingForm({
     setAllocationIds(initialPart?.id ? [initialPart.id] : []);
   }, [defaultValues, form, initialPart, open]);
 
-  const selectableInventory = useMemo(() => {
-    return inventoryItems.filter((item) => {
-      if (item.status !== "AVAILABLE") return false;
-      if (!item.allocatedToListingId) return true;
-      return defaultValues?.id === item.allocatedToListingId;
-    });
-  }, [defaultValues?.id, inventoryItems]);
+  const selectableInventory = inventoryItems;
 
   const currentAllocatedIds = useMemo(
     () =>
@@ -187,7 +184,10 @@ export function ListingForm({
         });
       }
 
-      await utils.listings.getAllAdmin.invalidate();
+      await Promise.all([
+        utils.listings.getAllAdmin.invalidate(),
+        utils.inventory.getAvailableForAllocation.invalidate(),
+      ]);
       toast.success(isEditing ? "Listing updated" : "Listing created");
       onOpenChange(false);
     } catch (error) {

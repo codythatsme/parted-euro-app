@@ -76,6 +76,30 @@ export const inventoryRouter = createTRPCRouter({
     }));
   }),
 
+  // Lightweight query for listing form allocation picker
+  getAvailableForAllocation: adminProcedure
+    .input(z.object({ listingId: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.part.findMany({
+        where: {
+          status: PartStatus.AVAILABLE,
+          OR: [
+            { allocatedToListingId: null },
+            ...(input.listingId
+              ? [{ allocatedToListingId: input.listingId }]
+              : []),
+          ],
+        },
+        select: {
+          id: true,
+          variant: true,
+          allocatedToListingId: true,
+          partDetails: { select: { name: true, partNo: true } },
+        },
+        orderBy: { partDetails: { name: "asc" } },
+      });
+    }),
+
   // Get all inventory items
   getAll: adminProcedure.query(async ({ ctx }) => {
     // Execute the query

@@ -100,14 +100,10 @@ export const listingsRouter = createTRPCRouter({
           },
         },
         allocatedParts: {
-          include: {
-            partDetails: {
-              include: {
-                cars: true,
-              },
-            },
-            donor: true,
-            inventoryLocation: true,
+          select: {
+            id: true,
+            status: true,
+            partDetailsId: true,
           },
           orderBy: {
             createdAt: "asc",
