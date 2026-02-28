@@ -153,6 +153,10 @@ export function ListOnEbayDialog({
       toast.error(error.message);
     },
   });
+  const listingCars = api.listings.getListingCars.useQuery(
+    { id: listing.id },
+    { enabled: open },
+  );
   const fulfillmentPolicies = api.ebay.getFulfillmentPolicies.useQuery(undefined, {
     enabled: open,
   });
@@ -231,16 +235,12 @@ export function ListOnEbayDialog({
 
   // Create HTML table for part fitment
   const makeTableHTML = () => {
-    const uniqueCars = listing.components
-      .flatMap((component) => component.partDetail.cars ?? [])
-      .filter((car, index, self) => index === self.findIndex((x) => x.id === car.id));
-
-    return uniqueCars
-      .map((car: { series?: string; generation?: string; model?: string }) => {
+    return (listingCars.data ?? [])
+      .map((car) => {
         return `<tr style="padding:1rem; border-bottom: 1px solid #ddd">
-          <td>${car.series ?? ""}</td>
-          <td>${car.generation ?? ""}</td>
-          <td>${car.model ?? ""}</td>
+          <td>${car.series}</td>
+          <td>${car.generation}</td>
+          <td>${car.model}</td>
         </tr>`;
       })
       .join("");
@@ -584,7 +584,7 @@ export function ListOnEbayDialog({
           <Button
             type="button"
             onClick={handleListOnEbay}
-            disabled={isSubmitting || !validated}
+            disabled={isSubmitting || !validated || !listingCars.data}
           >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             List on eBay

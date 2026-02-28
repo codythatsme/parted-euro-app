@@ -2,7 +2,6 @@ import { PartStatus, type Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
-  calculateComponentAvailability,
   calculateRequiredPartCounts,
   calculateStock,
 } from "~/server/lib/stock";
@@ -36,16 +35,6 @@ const prepareSearchTerms = (search: string | undefined): string[] => {
 const withStock = <T extends StockListingInput>(listing: T) => ({
   ...listing,
   stock: calculateStock({
-    components: listing.components.map((component) => ({
-      partDetailId: component.partDetailId,
-      quantity: component.quantity,
-    })),
-    inventoryParts: listing.allocatedParts.map((part) => ({
-      partDetailsId: part.partDetailsId,
-      status: part.status,
-    })),
-  }),
-  componentAvailability: calculateComponentAvailability({
     components: listing.components.map((component) => ({
       partDetailId: component.partDetailId,
       quantity: component.quantity,
@@ -93,8 +82,8 @@ export const listingsRouter = createTRPCRouter({
         components: {
           include: {
             partDetail: {
-              include: {
-                cars: true,
+              select: {
+                partNo: true,
               },
             },
           },
@@ -129,6 +118,50 @@ export const listingsRouter = createTRPCRouter({
       items: items.map((item) => withStock(item)),
     };
   }),
+
+  getListingCars: adminProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const listing = await ctx.db.listing.findUnique({
+        where: { id: input.id },
+        select: {
+          components: {
+            select: {
+              partDetail: {
+                select: {
+                  cars: {
+                    select: {
+                      id: true,
+                      series: true,
+                      generation: true,
+                      model: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!listing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Listing not found",
+        });
+      }
+
+      const seen = new Set<string>();
+      const cars: Array<{ id: string; series: string; generation: string; model: string }> = [];
+      for (const component of listing.components) {
+        for (const car of component.partDetail.cars) {
+          if (!seen.has(car.id)) {
+            seen.add(car.id);
+            cars.push(car);
+          }
+        }
+      }
+      return cars;
+    }),
 
   create: adminProcedure
     .input(
