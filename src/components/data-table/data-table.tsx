@@ -162,10 +162,12 @@ export function DataTable<TData, TValue>({
     },
   });
 
-  // When the global search changes, reset to the first page for better UX
+  // When the global search or column filters change, reset to the first page for better UX
+  // Use filtersParam (stable string) instead of columnFilters (unstable array ref from useMemo
+  // recalculating every render due to unstable columns dep) to avoid resetting on every render.
   React.useEffect(() => {
     table.setPageIndex(0);
-  }, [globalFilter, columnFilters]);
+  }, [globalFilter, filtersParam]);
 
   // Update the parent component when selection changes
   React.useEffect(() => {
