@@ -78,6 +78,24 @@ import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import Compressor from "compressorjs";
 import { FilterableCarSelect } from "~/components/ui/filterable-car-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
+import { usePendingOrder } from "~/components/pending-order-provider";
 import { VirtualizedCombobox } from "~/components/ui/virtualized-combobox";
 import { ListingForm } from "~/app/admin/listings/_components/listing-form";
 
@@ -209,6 +227,7 @@ const formSchema = z
     donorVin: z.string().optional().nullable(),
     inventoryLocationId: z.string().optional().nullable(),
     variant: z.string().optional().nullable(),
+    status: z.enum(["AVAILABLE", "RESERVED", "SOLD", "RETURNED"]).default("AVAILABLE"),
     count: z.coerce.number().int().min(1, "Count must be at least 1"),
     images: z
       .array(
@@ -297,6 +316,13 @@ export function InventoryForm({
     createdPartIds: string[];
   } | null>(null);
   const [showListingForm, setShowListingForm] = useState(false);
+  const [soldPartPrompt, setSoldPartPrompt] = useState<{
+    partIds: string[];
+    description: string;
+    partNo: string;
+    costPrice: number;
+  } | null>(null);
+  const pendingOrder = usePendingOrder();
 
   const utils = api.useUtils();
 
@@ -335,6 +361,7 @@ export function InventoryForm({
       donorVin: defaultValues?.donorVin ?? null,
       inventoryLocationId: defaultValues?.inventoryLocationId ?? null,
       variant: defaultValues?.variant ?? null,
+      status: defaultValues?.status ?? "AVAILABLE",
       count: 1,
       isNewPart: false,
       partNo: "",
@@ -715,6 +742,10 @@ export function InventoryForm({
     try {
       setFormErrors(null);
 
+      // If user selected SOLD, keep part AVAILABLE — order endpoint marks SOLD
+      const wantsSold = values.status === "SOLD";
+      const statusForApi = wantsSold ? "AVAILABLE" : values.status;
+
       // Include ordered images
       const imagesWithOrder = images.map((img, index) => ({
         ...img,
@@ -765,26 +796,41 @@ export function InventoryForm({
               donorVin: values.donorVin,
               inventoryLocationId: values.inventoryLocationId,
               variant: values.variant,
+              status: statusForApi,
               count: values.count,
               images: imagesWithOrder,
             };
 
             if (isEditing && !isDuplicating && defaultValues) {
-              const shouldCloseAfterSave = true;
               await updateInventoryMutation.mutateAsync({
                 id: defaultValues.id,
                 data: inventoryData,
               });
               toast.success("Inventory item updated successfully");
-              if (shouldCloseAfterSave) {
-                onOpenChange(false);
+              if (wantsSold) {
+                setSoldPartPrompt({
+                  partIds: [defaultValues.id],
+                  description: `${values.name ?? partDetails?.name ?? "Part"} - ${values.partNo ?? newPart.partNo}`,
+                  partNo: values.partNo ?? newPart.partNo,
+                  costPrice: values.costPrice ?? 0,
+                });
               }
+              onOpenChange(false);
             } else {
               let needsSelection = false;
               const createResult =
                 await createInventoryMutation.mutateAsync(inventoryData);
               needsSelection = queueListingAssignmentPrompt(createResult, newPart.partNo);
-              if (createResult.assignment.noCandidates) {
+
+              if (wantsSold) {
+                setSoldPartPrompt({
+                  partIds: createResult.assignment.createdPartIds,
+                  description: `${values.name ?? "Part"} - ${newPart.partNo}`,
+                  partNo: newPart.partNo,
+                  costPrice: values.costPrice ?? 0,
+                });
+                onOpenChange(false);
+              } else if (createResult.assignment.noCandidates) {
                 setPendingListingCreate({
                   partNo: newPart.partNo,
                   partName: values.name ?? "",
@@ -875,11 +921,20 @@ export function InventoryForm({
                 donorVin: values.donorVin,
                 inventoryLocationId: values.inventoryLocationId,
                 variant: values.variant,
+                status: statusForApi,
                 images: imagesWithOrder,
               },
             };
             await updateInventoryMutation.mutateAsync(updateData);
             toast.success("Inventory item updated successfully");
+            if (wantsSold) {
+              setSoldPartPrompt({
+                partIds: [defaultValues.id],
+                description: `${values.name ?? partDetails?.name ?? "Part"} - ${values.partDetailsId ?? ""}`,
+                partNo: values.partDetailsId ?? "",
+                costPrice: values.costPrice ?? 0,
+              });
+            }
           } else {
             let needsSelection = false;
             const createData: CreateInventoryInput = {
@@ -887,13 +942,22 @@ export function InventoryForm({
               donorVin: values.donorVin,
               inventoryLocationId: values.inventoryLocationId,
               variant: values.variant,
+              status: statusForApi,
               count: values.count,
               images: imagesWithOrder,
             };
             const createResult = await createInventoryMutation.mutateAsync(createData);
             const partNo = values.partDetailsId ?? "";
             needsSelection = queueListingAssignmentPrompt(createResult, partNo);
-            if (createResult.assignment.noCandidates) {
+
+            if (wantsSold) {
+              setSoldPartPrompt({
+                partIds: createResult.assignment.createdPartIds,
+                description: `${values.name ?? partDetails?.name ?? "Part"} - ${partNo}`,
+                partNo,
+                costPrice: values.costPrice ?? 0,
+              });
+            } else if (createResult.assignment.noCandidates) {
               setPendingListingCreate({
                 partNo,
                 partName: values.name ?? "",
@@ -911,7 +975,7 @@ export function InventoryForm({
                 "Inventory item created. Select which listing should receive it.",
               );
             }
-            shouldCloseAfterSave = !needsSelection && !createResult.assignment.noCandidates;
+            shouldCloseAfterSave = wantsSold || (!needsSelection && !createResult.assignment.noCandidates);
           }
           if (shouldCloseAfterSave) {
             onOpenChange(false);
@@ -1405,20 +1469,40 @@ export function InventoryForm({
                       )}
                     />
 
+                    <FormField
+                      control={form.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                            defaultValue={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="AVAILABLE">Available</SelectItem>
+                              <SelectItem value="RESERVED">Reserved</SelectItem>
+                              <SelectItem value="SOLD">Sold</SelectItem>
+                              <SelectItem value="RETURNED">Returned</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
                     {defaultValues && (
-                      <div className="grid grid-cols-1 gap-2">
-                        <div className="text-xs text-muted-foreground">
-                          Status:{" "}
-                          <span className="font-medium text-foreground">
-                            {defaultValues.status}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Allocated To:{" "}
-                          <span className="font-medium text-foreground">
-                            {defaultValues.allocatedToListing?.title ?? "Unallocated"}
-                          </span>
-                        </div>
+                      <div className="text-xs text-muted-foreground">
+                        Allocated To:{" "}
+                        <span className="font-medium text-foreground">
+                          {defaultValues.allocatedToListing?.title ?? "Unallocated"}
+                        </span>
                       </div>
                     )}
 
@@ -1917,6 +2001,61 @@ export function InventoryForm({
           }}
         />
       )}
+
+      <AlertDialog
+        open={soldPartPrompt !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setSoldPartPrompt(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add to pending order?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {soldPartPrompt?.partIds.length === 1
+                ? "This part has been created. Would you like to add it to a pending order?"
+                : `${soldPartPrompt?.partIds.length} parts created. Add them to a pending order?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Skip</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!soldPartPrompt) return;
+                for (const partId of soldPartPrompt.partIds) {
+                  pendingOrder.addItem({
+                    partId,
+                    partNo: soldPartPrompt.partNo,
+                    description: soldPartPrompt.description,
+                    price: soldPartPrompt.costPrice,
+                  });
+                }
+                toast.success(`Added ${soldPartPrompt.partIds.length} item(s) to pending order`);
+                setSoldPartPrompt(null);
+              }}
+            >
+              Add to Order
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={() => {
+                if (!soldPartPrompt) return;
+                for (const partId of soldPartPrompt.partIds) {
+                  pendingOrder.addItem({
+                    partId,
+                    partNo: soldPartPrompt.partNo,
+                    description: soldPartPrompt.description,
+                    price: soldPartPrompt.costPrice,
+                  });
+                }
+                pendingOrder.openFinalize();
+                setSoldPartPrompt(null);
+              }}
+            >
+              Create Order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

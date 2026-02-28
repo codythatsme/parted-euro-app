@@ -328,4 +328,142 @@ export const xeroRouter = createTRPCRouter({
         throw new Error("Failed to create cash order");
       }
     }),
+
+  createDirectCashOrder: adminProcedure
+    .input(
+      z.object({
+        name: z.string(),
+        email: z.string(),
+        phone: z.string(),
+        shippingMethod: z.string(),
+        postageCost: z.number(),
+        countryCode: z.string(),
+        items: z.array(
+          z.object({
+            partId: z.string(),
+            description: z.string(),
+            price: z.number(),
+          }),
+        ),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const subtotal = input.items.reduce((acc, item) => acc + item.price, 0);
+
+      const partIds = input.items.map((item) => item.partId);
+      const parts = await db.part.findMany({
+        where: { id: { in: partIds } },
+        select: {
+          id: true,
+          status: true,
+          allocatedToListingId: true,
+        },
+      });
+
+      if (parts.length !== partIds.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One or more parts not found.",
+        });
+      }
+
+      const unavailable = parts.filter((p) => p.status !== PartStatus.AVAILABLE);
+      if (unavailable.length > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One or more parts are not available.",
+        });
+      }
+
+      const order = await db.$transaction(async (tx) => {
+        const createdOrder = await tx.order.create({
+          data: {
+            name: input.name,
+            email: input.email,
+            shipping: Math.round(input.postageCost * 100),
+            subtotal: Math.round(subtotal * 100),
+            status: "PAID",
+            shippingMethod: input.shippingMethod,
+          },
+        });
+
+        for (const item of input.items) {
+          const orderItem = await tx.orderItem.create({
+            data: {
+              orderId: createdOrder.id,
+              listingId: null,
+              description: item.description,
+              quantity: 1,
+              unitPrice: item.price,
+            },
+          });
+
+          await tx.orderItemPart.create({
+            data: {
+              orderItemId: orderItem.id,
+              partId: item.partId,
+            },
+          });
+        }
+
+        const soldResult = await tx.part.updateMany({
+          where: {
+            id: { in: partIds },
+            status: PartStatus.AVAILABLE,
+          },
+          data: {
+            status: PartStatus.SOLD,
+            reservedAt: null,
+          },
+        });
+
+        if (soldResult.count !== partIds.length) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Inventory changed while creating order. Please retry.",
+          });
+        }
+
+        return createdOrder;
+      });
+
+      const lineItemsFormatted: XeroItem[] = input.items.map((item) => ({
+        description: item.description,
+        quantity: 1,
+        unitAmount: item.price,
+        accountCode: "200",
+      }));
+
+      if (input.postageCost > 0) {
+        lineItemsFormatted.push({
+          description: "Shipping",
+          quantity: 1,
+          unitAmount: input.postageCost,
+          accountCode: "210",
+          lineAmount: input.postageCost,
+        });
+      }
+
+      await createXeroInvoice({
+        items: lineItemsFormatted,
+        customerPhone: input.phone,
+        customerEmail: input.email,
+        customerName: input.name,
+        orderId: order.id,
+        shippingAddress: { country: input.countryCode },
+        shippingCost: input.postageCost,
+        shippingMethod: input.shippingMethod,
+      });
+
+      const affectedListingIds = parts
+        .map((p) => p.allocatedToListingId)
+        .filter((id): id is string => id !== null);
+      if (affectedListingIds.length > 0) {
+        await syncEbayQuantitiesForListings(affectedListingIds).catch((error) => {
+          console.error("eBay quantity sync failed after direct cash order", error);
+        });
+      }
+
+      return { success: true, orderId: order.id };
+    }),
 });

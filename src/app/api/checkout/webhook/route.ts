@@ -75,11 +75,16 @@ export const POST = async (req: NextRequest) => {
         });
       }
 
-      await syncEbayQuantitiesForListings(orderItems.map((item) => item.listingId)).catch(
-        (error) => {
-          console.error("eBay quantity sync failed after checkout completion", error);
-        },
-      );
+      const completedListingIds = orderItems
+        .map((item) => item.listingId)
+        .filter((id): id is string => id !== null);
+      if (completedListingIds.length > 0) {
+        await syncEbayQuantitiesForListings(completedListingIds).catch(
+          (error) => {
+            console.error("eBay quantity sync failed after checkout completion", error);
+          },
+        );
+      }
 
       const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
         expand: ["data.price.product"],
@@ -128,11 +133,16 @@ export const POST = async (req: NextRequest) => {
         });
       }
 
-      await syncEbayQuantitiesForListings(orderItems.map((item) => item.listingId)).catch(
-        (error) => {
-          console.error("eBay quantity sync failed after checkout expiry", error);
-        },
-      );
+      const expiredListingIds = orderItems
+        .map((item) => item.listingId)
+        .filter((id): id is string => id !== null);
+      if (expiredListingIds.length > 0) {
+        await syncEbayQuantitiesForListings(expiredListingIds).catch(
+          (error) => {
+            console.error("eBay quantity sync failed after checkout expiry", error);
+          },
+        );
+      }
 
       await db.order.updateMany({
         where: {

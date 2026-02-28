@@ -1,6 +1,6 @@
 import { Stripe } from "stripe";
 import { z } from "zod";
-import { createTRPCRouter, publicProcedure } from "../trpc";
+import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
 import { PartStatus } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 // import { createStripeSession } from "@/pages/api/checkout";
@@ -956,4 +956,161 @@ export const checkoutRouter = createTRPCRouter({
         };
       },
     ),
+
+  getDirectStripeCheckout: adminProcedure
+    .input(
+      z.object({
+        items: z.array(
+          z.object({
+            partId: z.string(),
+            description: z.string(),
+            price: z.number(),
+          }),
+        ),
+        name: z.string(),
+        email: z.string(),
+        countryCode: z.string(),
+        shippingOptions: z.array(
+          z.object({
+            shipping_rate_data: z.object({
+              type: z.string(),
+              display_name: z.string(),
+              fixed_amount: z.object({
+                amount: z.number(),
+                currency: z.string(),
+              }),
+            }),
+          }),
+        ),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const stripe = new Stripe(process.env.STRIPE_SECRET!, {
+        apiVersion: "2022-11-15",
+      });
+
+      const partIds = input.items.map((item) => item.partId);
+      const parts = await db.part.findMany({
+        where: { id: { in: partIds } },
+        select: { id: true, status: true, allocatedToListingId: true },
+      });
+
+      if (parts.length !== partIds.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One or more parts not found.",
+        });
+      }
+
+      const unavailable = parts.filter((p) => p.status !== PartStatus.AVAILABLE);
+      if (unavailable.length > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One or more parts are not available.",
+        });
+      }
+
+      const subtotal = input.items.reduce((acc, item) => acc + item.price, 0);
+
+      const stripeLineItems = input.items.map((item) => ({
+        price_data: {
+          currency: "aud",
+          product_data: { name: item.description },
+          unit_amount: Math.round(item.price * 100),
+        },
+        quantity: 1,
+      }));
+
+      const redirectURL =
+        process.env.NODE_ENV === "development"
+          ? "http://localhost:3000"
+          : "https://partedeuro.com.au";
+
+      const customer = await stripe.customers.create({
+        email: input.email,
+        name: input.name,
+      });
+
+      const order = await db.$transaction(async (tx) => {
+        const createdOrder = await tx.order.create({
+          data: {
+            email: input.email,
+            name: input.name,
+            status: "PENDING",
+            subtotal: Math.round(subtotal * 100),
+          },
+        });
+
+        for (const item of input.items) {
+          const orderItem = await tx.orderItem.create({
+            data: {
+              orderId: createdOrder.id,
+              listingId: null,
+              description: item.description,
+              quantity: 1,
+              unitPrice: item.price,
+            },
+          });
+
+          await tx.orderItemPart.create({
+            data: {
+              orderItemId: orderItem.id,
+              partId: item.partId,
+            },
+          });
+        }
+
+        const reservedAt = new Date();
+        const reserveResult = await tx.part.updateMany({
+          where: {
+            id: { in: partIds },
+            status: PartStatus.AVAILABLE,
+          },
+          data: {
+            status: PartStatus.RESERVED,
+            reservedAt,
+          },
+        });
+
+        if (reserveResult.count !== partIds.length) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Inventory changed during checkout. Please retry.",
+          });
+        }
+
+        return createdOrder;
+      });
+
+      const affectedListingIds = parts
+        .map((p) => p.allocatedToListingId)
+        .filter((id): id is string => id !== null);
+      if (affectedListingIds.length > 0) {
+        await syncEbayQuantitiesForListings(affectedListingIds).catch((error) => {
+          console.error("eBay quantity sync failed after direct reservation", error);
+        });
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        customer: customer.id,
+        payment_method_types: ["card", "afterpay_clearpay", "link"],
+        expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+        phone_number_collection: { enabled: true },
+        shipping_address_collection: {
+          allowed_countries: [
+            input.countryCode,
+          ] as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[],
+        },
+        shipping_options:
+          input.shippingOptions as Stripe.Checkout.SessionCreateParams.ShippingOption[],
+        line_items:
+          stripeLineItems as Stripe.Checkout.SessionCreateParams.LineItem[],
+        mode: "payment",
+        success_url: `${redirectURL}/checkout/confirmation/${order.id}`,
+        cancel_url: `${redirectURL}/checkout?stripeError=true`,
+        metadata: { orderId: order.id },
+      });
+
+      return { url: session.url };
+    }),
 });

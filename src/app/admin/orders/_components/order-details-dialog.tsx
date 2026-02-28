@@ -142,19 +142,23 @@ export function OrderDetailsDialog({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {order.orderItems.map((item) => (
+                {order.orderItems.map((item) => {
+                  const title = item.listing?.title ?? item.description ?? "Direct sale";
+                  const imageUrl = item.listing?.images?.[0]?.url;
+                  const price = item.unitPrice;
+                  return (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-3">
-                        {item.listing.images?.[0] && (
+                        {imageUrl && (
                           <img
-                            src={item.listing.images[0].url}
-                            alt={item.listing.title}
+                            src={imageUrl}
+                            alt={title}
                             className="h-12 w-12 rounded-md object-cover"
                           />
                         )}
                         <div>
-                          {item.listing.title}
+                          {title}
                           <div className="max-w-[300px] truncate text-xs text-muted-foreground">
                             Part #:{" "}
                             {item.allocatedParts
@@ -180,16 +184,17 @@ export function OrderDetailsDialog({
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatPrice(item.unitPrice ?? item.listing.price)}
+                      {formatPrice(price)}
                     </TableCell>
                     <TableCell className="text-center">
                       {item.quantity}
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatPrice((item.unitPrice ?? item.listing.price) * item.quantity)}
+                      {formatPrice(price * item.quantity)}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
 
                 {/* Subtotal row */}
                 <TableRow>

@@ -247,8 +247,9 @@ function PickSheetDocument({ order, logoSrc }: PickSheetDocumentProps) {
           </View>
 
           {order.orderItems.map((item) => {
-            const unitPrice = item.unitPrice ?? item.listing.price;
+            const unitPrice = item.unitPrice;
             const lineTotal = unitPrice * item.quantity;
+            const title = item.listing?.title ?? item.description ?? "Direct sale";
             const partNos = item.allocatedParts
               .map((a) => a.part.partDetails.partNo)
               .join(", ");
@@ -262,7 +263,7 @@ function PickSheetDocument({ order, logoSrc }: PickSheetDocumentProps) {
             return (
               <View key={item.id} style={styles.tableRow} wrap={false}>
                 <View style={styles.colTitle}>
-                  <Text style={styles.cellText}>{item.listing.title}</Text>
+                  <Text style={styles.cellText}>{title}</Text>
                 </View>
                 <View style={styles.colPart}>
                   <Text style={styles.cellText}>{partNos}</Text>

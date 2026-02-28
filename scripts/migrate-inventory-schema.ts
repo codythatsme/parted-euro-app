@@ -767,7 +767,7 @@ const runStepEBestEffortHistoricalLinking = async (
       report.counters.orderItemPartLinksCreated += linkedCount;
     }
 
-    if (orderItem.unitPrice !== orderItem.listing.price) {
+    if (orderItem.unitPrice !== orderItem.listing?.price) {
       report.counters.orderItemUnitPricesUpdated += 1;
     }
 
@@ -787,13 +787,13 @@ const runStepEBestEffortHistoricalLinking = async (
           });
         }
 
-        if (orderItem.unitPrice !== orderItem.listing.price) {
+        if (orderItem.unitPrice !== orderItem.listing?.price) {
           await tx.orderItem.update({
             where: {
               id: orderItem.id,
             },
             data: {
-              unitPrice: orderItem.listing.price,
+              unitPrice: orderItem.listing?.price,
             },
           });
         }
