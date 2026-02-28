@@ -1917,14 +1917,6 @@ function PartNumberAutocomplete({
   isEditing,
 }: PartNumberAutocompleteProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const partNoValue = form.watch("partNo") ?? "";
-
-  // Sync search term with part number input
-  useEffect(() => {
-    if (!existingPartSelected) {
-      setSearchTerm(partNoValue);
-    }
-  }, [partNoValue, existingPartSelected, setSearchTerm]);
 
   // Show dropdown when there are results and user is typing
   useEffect(() => {
@@ -1956,6 +1948,7 @@ function PartNumberAutocomplete({
                   disabled={isEditing || existingPartSelected}
                   onChange={(e) => {
                     field.onChange(e);
+                    setSearchTerm(e.target.value);
                   }}
                 />
               </FormControl>
