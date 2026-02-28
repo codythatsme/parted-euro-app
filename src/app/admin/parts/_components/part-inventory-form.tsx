@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -490,6 +490,24 @@ export function PartInventoryForm({
     }
   }, [isNewPart, mode.kind, existingPartSelected, shouldCreateInventory]);
 
+  // Auto-detect exact match for typed part number
+  useEffect(() => {
+    if (mode.kind !== "addPart") return;
+    if (existingPartSelected) return;
+    if (searchResults.length === 0) return;
+
+    const typedPartNo = form.getValues("partNo")?.trim() ?? "";
+    if (typedPartNo.length === 0) return;
+
+    const exactMatch = searchResults.find(
+      (r) => r.value.toLowerCase() === typedPartNo.toLowerCase(),
+    );
+
+    if (exactMatch) {
+      handleAutocompleteSelect(exactMatch.value);
+    }
+  }, [searchResults, mode.kind, existingPartSelected, form, handleAutocompleteSelect]);
+
   // Reset on open
   useEffect(() => {
     if (!open) return;
@@ -619,13 +637,16 @@ export function PartInventoryForm({
   };
 
   // addPart mode: autocomplete handler
-  const handleAutocompleteSelect = (partNo: string) => {
-    setExistingPartSelected(true);
-    form.setValue("partNo", partNo);
-    form.setValue("createInventory", true);
-    setPartSearchOpen(false);
-    setSearchTerm("");
-  };
+  const handleAutocompleteSelect = useCallback(
+    (partNo: string) => {
+      setExistingPartSelected(true);
+      form.setValue("partNo", partNo);
+      form.setValue("createInventory", true);
+      setPartSearchOpen(false);
+      setSearchTerm("");
+    },
+    [form],
+  );
 
   const handleClearExistingPart = () => {
     setExistingPartSelected(false);
