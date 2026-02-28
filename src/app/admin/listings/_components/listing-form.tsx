@@ -400,6 +400,7 @@ export function ListingForm({
                         <span className="text-xs">
                           {item.partDetails.name} ({item.partDetails.partNo})
                           {item.variant ? ` - ${item.variant}` : ""}
+                          {item.donorVin ? ` [${item.donorVin}]` : ""}
                         </span>
                       </label>
                     );

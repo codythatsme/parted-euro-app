@@ -99,6 +99,7 @@ export const inventoryRouter = createTRPCRouter({
         select: {
           id: true,
           variant: true,
+          donorVin: true,
           allocatedToListingId: true,
           partDetails: { select: { name: true, partNo: true } },
           images: {
