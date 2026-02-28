@@ -20,6 +20,7 @@ import { FinalizeOrderDialog } from "./_components/finalize-order-dialog";
 import { OrderToast } from "./_components/order-toast";
 import { toast } from "sonner";
 import { useAdminTitle } from "~/hooks/use-admin-title";
+import { useCallback } from "react";
 
 export default function ListingsAdminPage() {
   useAdminTitle("Listings");
@@ -130,9 +131,28 @@ export default function ListingsAdminPage() {
     toast.dismiss("order-toast");
   };
 
+  const utils = api.useUtils();
+  const unretireMutation = api.listings.unretire.useMutation({
+    onSuccess: () => {
+      toast.success("Listing unretired");
+      void utils.listings.getAllAdmin.invalidate();
+    },
+    onError: (error) => {
+      toast.error(`Error unretiring listing: ${error.message}`);
+    },
+  });
+
+  const handleUnretire = useCallback(
+    (item: AdminListingsItem) => {
+      unretireMutation.mutate({ id: item.id });
+    },
+    [unretireMutation],
+  );
+
   const columns = getListingColumns({
     onEdit: handleEditListing,
     onDelete: handleDeleteListing,
+    onUnretire: handleUnretire,
     onListOnEbay: handleListOnEbay,
   });
 

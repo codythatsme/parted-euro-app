@@ -1,7 +1,7 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { DollarSign, ExternalLink, MoreHorizontal, Package, Pencil, Store, Trash } from "lucide-react";
+import { DollarSign, ExternalLink, MoreHorizontal, Package, Pencil, RotateCcw, Store, Trash } from "lucide-react";
 import { Link } from "~/components/link";
 import { DataTableColumnHeader } from "~/components/data-table/data-table-column-header";
 import { Button } from "~/components/ui/button";
@@ -25,12 +25,14 @@ const formatter = new Intl.NumberFormat("en-AU", {
 type ListingColumnsProps = {
   onEdit: (listing: AdminListingsItem) => void;
   onDelete: (listing: AdminListingsItem) => void;
+  onUnretire: (listing: AdminListingsItem) => void;
   onListOnEbay: (listing: AdminListingsItem) => void;
 };
 
 export function getListingColumns({
   onEdit,
   onDelete,
+  onUnretire,
   onListOnEbay,
 }: ListingColumnsProps): ColumnDef<AdminListingsItem>[] {
   return [
@@ -159,13 +161,20 @@ export function getListingColumns({
                 List on eBay
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => onDelete(listing)}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash className="mr-2 h-4 w-4" />
-                Retire
-              </DropdownMenuItem>
+              {listing.active ? (
+                <DropdownMenuItem
+                  onClick={() => onDelete(listing)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash className="mr-2 h-4 w-4" />
+                  Retire
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={() => onUnretire(listing)}>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Unretire
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         );

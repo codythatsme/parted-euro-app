@@ -361,6 +361,24 @@ export const listingsRouter = createTRPCRouter({
       return listing;
     }),
 
+  unretire: adminProcedure
+    .input(
+      z.object({
+        id: z.string(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const listing = await ctx.db.listing.update({
+        where: {
+          id: input.id,
+        },
+        data: {
+          active: true,
+        },
+      });
+      return listing;
+    }),
+
   getStock: publicProcedure
     .input(
       z.object({
