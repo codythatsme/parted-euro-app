@@ -196,7 +196,7 @@ export function ListingForm({
         });
       }
 
-      await Promise.all([
+       Promise.all([
         utils.listings.getAllAdmin.invalidate(),
         utils.inventory.getAvailableForAllocation.invalidate(),
       ]);
