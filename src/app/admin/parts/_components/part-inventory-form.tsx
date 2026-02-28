@@ -277,6 +277,9 @@ export function PartInventoryForm({
   // addPart mode: existing part selected from autocomplete
   const [existingPartSelected, setExistingPartSelected] = useState(false);
 
+  // Deferred blur check: set when input blurs before search results arrive
+  const [pendingBlurCheck, setPendingBlurCheck] = useState(false);
+
   // Location modal
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
@@ -503,9 +506,11 @@ export function PartInventoryForm({
   );
 
   
-  // Auto-detect exact match for typed part number
+  // Retroactive blur check: fires when search results arrive after the input
+  // already blurred (e.g. user pastes and immediately clicks away).
   useEffect(() => {
     if (mode.kind !== "addPart") return;
+    if (!pendingBlurCheck) return;
     if (existingPartSelected) return;
     if (searchResults.length === 0) return;
 
@@ -519,7 +524,8 @@ export function PartInventoryForm({
     if (exactMatch) {
       handleAutocompleteSelect(exactMatch.value);
     }
-  }, [searchResults, mode.kind, existingPartSelected, form, handleAutocompleteSelect]);
+    setPendingBlurCheck(false);
+  }, [searchResults, pendingBlurCheck, mode.kind, existingPartSelected, form, handleAutocompleteSelect]);
 
   // Reset on open
   useEffect(() => {
@@ -527,6 +533,7 @@ export function PartInventoryForm({
 
     setIsNewPart(false);
     setExistingPartSelected(false);
+    setPendingBlurCheck(false);
     setSelectedCars([]);
     setSelectedPartTypes([]);
     setSearchTerm("");
@@ -1163,6 +1170,7 @@ export function PartInventoryForm({
                   onSelect={handleAutocompleteSelect}
                   onClear={handleClearExistingPart}
                   isEditing={false}
+                  setPendingBlurCheck={setPendingBlurCheck}
                 />
               )}
 
@@ -1902,6 +1910,7 @@ type PartNumberAutocompleteProps = {
   onSelect: (partNo: string) => void;
   onClear: () => void;
   isEditing: boolean;
+  setPendingBlurCheck: (v: boolean) => void;
 };
 
 function PartNumberAutocomplete({
@@ -1915,6 +1924,7 @@ function PartNumberAutocomplete({
   onSelect,
   onClear,
   isEditing,
+  setPendingBlurCheck,
 }: PartNumberAutocompleteProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -1949,6 +1959,22 @@ function PartNumberAutocomplete({
                   onChange={(e) => {
                     field.onChange(e);
                     setSearchTerm(e.target.value);
+                  }}
+                  onBlur={(e) => {
+                    field.onBlur();
+                    if (existingPartSelected) return;
+                    const typed = e.target.value.trim();
+                    if (typed.length === 0) return;
+                    const match = searchResults.find(
+                      (r) => r.value.toLowerCase() === typed.toLowerCase(),
+                    );
+                    if (match) {
+                      onSelect(match.value);
+                    } else if (typed.length >= 2) {
+                      // Results may still be in-flight; check when they arrive
+                      setPendingBlurCheck(true);
+                    }
+                    setDropdownOpen(false);
                   }}
                 />
               </FormControl>
