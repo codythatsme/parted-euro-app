@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 
+
 type ScriptMode = "dry-run" | "execute";
 
 type ScriptOptions = {
