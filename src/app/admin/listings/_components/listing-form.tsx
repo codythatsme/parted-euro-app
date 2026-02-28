@@ -38,7 +38,7 @@ type ListingFormProps = {
   defaultValues?: AdminListingsItem;
   isEditing?: boolean;
   initialPart?: {
-    id: string;
+    ids: string[];
     name?: string;
     partNo?: string;
   };
@@ -140,7 +140,7 @@ export function ListingForm({
         : [{ partDetailId: "", quantity: 1 }],
     });
 
-    setAllocationIds(initialPart?.id ? [initialPart.id] : []);
+    setAllocationIds(initialPart?.ids ?? []);
   }, [defaultValues, form, initialPart, open]);
 
   const selectableInventory = inventoryItems;

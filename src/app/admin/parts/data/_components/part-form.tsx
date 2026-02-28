@@ -43,6 +43,7 @@ import { cn } from "~/lib/utils";
 import { type Part } from "./columns";
 import { FilterableCarSelect } from "~/components/ui/filterable-car-select";
 import { VirtualizedCombobox } from "~/components/ui/virtualized-combobox";
+import { ListingForm } from "~/app/admin/listings/_components/listing-form";
 
 // Schema for form validation
 const formSchema = z.object({
@@ -77,6 +78,7 @@ type InventoryCreateAssignment = {
   createdPartIds: string[];
   autoAssignedListingId: string | null;
   needsSelection: boolean;
+  noCandidates: boolean;
   candidateListings: ListingAssignmentCandidate[];
 };
 
@@ -109,6 +111,12 @@ export function PartForm({
   const [pendingListingAssignment, setPendingListingAssignment] =
     useState<PendingListingAssignment | null>(null);
   const [selectedListingId, setSelectedListingId] = useState<string>("");
+  const [pendingListingCreate, setPendingListingCreate] = useState<{
+    partNo: string;
+    partName: string;
+    createdPartIds: string[];
+  } | null>(null);
+  const [showListingForm, setShowListingForm] = useState(false);
 
   // Fetch available cars and part types for selects
   const { data: carOptions = [] } = api.part.getAllCars.useQuery();
@@ -289,14 +297,22 @@ export function PartForm({
           count: values.inventoryCount,
         });
 
-        const needsAssignmentPrompt = handleInventoryCreateResult(
-          inventoryResult,
-          createdPart.partNo,
-        );
-        if (needsAssignmentPrompt) {
-          toast.success(
-            `Part ${createdPart.partNo} created. Choose which listing should receive the new inventory.`,
+        if (inventoryResult.assignment.noCandidates) {
+          setPendingListingCreate({
+            partNo: createdPart.partNo,
+            partName: values.name,
+            createdPartIds: inventoryResult.assignment.createdPartIds,
+          });
+        } else {
+          const needsAssignmentPrompt = handleInventoryCreateResult(
+            inventoryResult,
+            createdPart.partNo,
           );
+          if (needsAssignmentPrompt) {
+            toast.success(
+              `Part ${createdPart.partNo} created. Choose which listing should receive the new inventory.`,
+            );
+          }
         }
       }
 
@@ -814,6 +830,62 @@ export function PartForm({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={!!pendingListingCreate && !showListingForm}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setPendingListingCreate(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>No Listing Found</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            No listing exists for{" "}
+            <span className="font-medium text-foreground">
+              {pendingListingCreate?.partNo}
+            </span>
+            . Would you like to create one now?
+          </p>
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingListingCreate(null)}
+            >
+              No
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setShowListingForm(true)}
+            >
+              Create Listing
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {showListingForm && pendingListingCreate && (
+        <ListingForm
+          open={showListingForm}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              setShowListingForm(false);
+              setPendingListingCreate(null);
+              void utils.inventory.getAll.invalidate();
+              void utils.listings.getAllAdmin.invalidate();
+            }
+          }}
+          initialPart={{
+            ids: pendingListingCreate.createdPartIds,
+            name: pendingListingCreate.partName,
+            partNo: pendingListingCreate.partNo,
+          }}
+        />
+      )}
     </>
   );
 }

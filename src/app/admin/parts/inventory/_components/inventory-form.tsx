@@ -79,6 +79,7 @@ import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import Compressor from "compressorjs";
 import { FilterableCarSelect } from "~/components/ui/filterable-car-select";
 import { VirtualizedCombobox } from "~/components/ui/virtualized-combobox";
+import { ListingForm } from "~/app/admin/listings/_components/listing-form";
 
 // Define image item type for DnD
 type ImageItem = {
@@ -105,6 +106,7 @@ type InventoryCreateAssignment = {
   createdPartIds: string[];
   autoAssignedListingId: string | null;
   needsSelection: boolean;
+  noCandidates: boolean;
   candidateListings: ListingAssignmentCandidate[];
 };
 
@@ -289,6 +291,12 @@ export function InventoryForm({
   const [pendingListingAssignment, setPendingListingAssignment] =
     useState<PendingListingAssignment | null>(null);
   const [selectedListingId, setSelectedListingId] = useState<string>("");
+  const [pendingListingCreate, setPendingListingCreate] = useState<{
+    partNo: string;
+    partName: string;
+    createdPartIds: string[];
+  } | null>(null);
+  const [showListingForm, setShowListingForm] = useState(false);
 
   const utils = api.useUtils();
 
@@ -776,20 +784,25 @@ export function InventoryForm({
               const createResult =
                 await createInventoryMutation.mutateAsync(inventoryData);
               needsSelection = queueListingAssignmentPrompt(createResult, newPart.partNo);
-              if (!needsSelection) {
+              if (createResult.assignment.noCandidates) {
+                setPendingListingCreate({
+                  partNo: newPart.partNo,
+                  partName: values.name ?? "",
+                  createdPartIds: createResult.assignment.createdPartIds,
+                });
+                toast.success("Inventory item created");
+                onOpenChange(false);
+              } else if (!needsSelection) {
                 if (createResult.assignment.autoAssignedListingId) {
                   toast.success("Inventory item created and auto-assigned to listing");
                 } else {
                   toast.success("Inventory item created successfully");
                 }
+                onOpenChange(false);
               } else {
                 toast.success(
                   "Inventory item created. Select which listing should receive it.",
                 );
-              }
-              const shouldCloseAfterSave = !needsSelection;
-              if (shouldCloseAfterSave) {
-                onOpenChange(false);
               }
             }
             invalidateAfterInventoryMutation(newPart.partNo);
@@ -880,7 +893,14 @@ export function InventoryForm({
             const createResult = await createInventoryMutation.mutateAsync(createData);
             const partNo = values.partDetailsId ?? "";
             needsSelection = queueListingAssignmentPrompt(createResult, partNo);
-            if (!needsSelection) {
+            if (createResult.assignment.noCandidates) {
+              setPendingListingCreate({
+                partNo,
+                partName: values.name ?? "",
+                createdPartIds: createResult.assignment.createdPartIds,
+              });
+              toast.success("Inventory item created");
+            } else if (!needsSelection) {
               if (createResult.assignment.autoAssignedListingId) {
                 toast.success("Inventory item created and auto-assigned to listing");
               } else {
@@ -891,7 +911,7 @@ export function InventoryForm({
                 "Inventory item created. Select which listing should receive it.",
               );
             }
-            shouldCloseAfterSave = !needsSelection;
+            shouldCloseAfterSave = !needsSelection && !createResult.assignment.noCandidates;
           }
           if (shouldCloseAfterSave) {
             onOpenChange(false);
@@ -1842,6 +1862,61 @@ export function InventoryForm({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={!!pendingListingCreate && !showListingForm}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setPendingListingCreate(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>No Listing Found</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            No listing exists for{" "}
+            <span className="font-medium text-foreground">
+              {pendingListingCreate?.partNo}
+            </span>
+            . Would you like to create one now?
+          </p>
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingListingCreate(null)}
+            >
+              No
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setShowListingForm(true)}
+            >
+              Create Listing
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {showListingForm && pendingListingCreate && (
+        <ListingForm
+          open={showListingForm}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              setShowListingForm(false);
+              invalidateAfterInventoryMutation(pendingListingCreate.partNo);
+              setPendingListingCreate(null);
+            }
+          }}
+          initialPart={{
+            ids: pendingListingCreate.createdPartIds,
+            name: pendingListingCreate.partName,
+            partNo: pendingListingCreate.partNo,
+          }}
+        />
+      )}
     </>
   );
 }

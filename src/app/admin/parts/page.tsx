@@ -274,7 +274,7 @@ export default function PartsPage() {
                 if (!open) setSelectedInventory(null);
               }}
               initialPart={{
-                id: selectedInventory.id,
+                ids: [selectedInventory.id],
                 name: selectedInventory.partDetails?.name,
                 partNo: selectedInventory.partDetails?.partNo,
               }}

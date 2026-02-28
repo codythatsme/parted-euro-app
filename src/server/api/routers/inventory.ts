@@ -270,6 +270,7 @@ export const inventoryRouter = createTRPCRouter({
               createdPartIds: createdParts.map((part) => part.id),
               autoAssignedListingId,
               needsSelection: assignmentCandidates.length > 1,
+              noCandidates: !explicitListingId && normalizedStatus === PartStatus.AVAILABLE && assignmentCandidates.length === 0,
               candidateListings:
                 assignmentCandidates.length > 1 ? assignmentCandidates : [],
             },
