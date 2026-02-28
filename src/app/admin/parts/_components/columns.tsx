@@ -123,12 +123,17 @@ export const getUnifiedPartColumns = ({
       if (!value) return "-";
       return new Date(value).toLocaleDateString();
     },
-    sortingFn: (rowA, rowB) => {
+    sortingFn: (rowA, rowB, columnId) => {
       const a = rowA.original.lastInventoryAdded;
       const b = rowB.original.lastInventoryAdded;
       if (!a && !b) return 0;
-      if (!a) return 1;
-      if (!b) return -1;
+      // Always sort nulls last regardless of sort direction
+      const isDesc = rowA
+        .getAllCells()
+        .find((c) => c.column.id === columnId)
+        ?.column.getIsSorted() === "desc";
+      if (!a) return isDesc ? -1 : 1;
+      if (!b) return isDesc ? 1 : -1;
       return a.getTime() - b.getTime();
     },
   },
