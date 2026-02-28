@@ -78,11 +78,17 @@ export const inventoryRouter = createTRPCRouter({
 
   // Lightweight query for listing form allocation picker
   getAvailableForAllocation: adminProcedure
-    .input(z.object({ listingId: z.string().optional() }))
+    .input(
+      z.object({
+        listingId: z.string().optional(),
+        partDetailIds: z.array(z.string().min(1)).min(1),
+      }),
+    )
     .query(async ({ ctx, input }) => {
       return ctx.db.part.findMany({
         where: {
           status: PartStatus.AVAILABLE,
+          partDetailsId: { in: input.partDetailIds },
           OR: [
             { allocatedToListingId: null },
             ...(input.listingId

@@ -68,10 +68,6 @@ export function ListingForm({
 }: ListingFormProps) {
   const utils = api.useUtils();
   const { data: partDetails = [] } = api.part.getAllPartDetails.useQuery();
-  const { data: inventoryItems = [] } =
-    api.inventory.getAvailableForAllocation.useQuery({
-      listingId: defaultValues?.id,
-    });
   const createMutation = api.listings.create.useMutation();
   const updateMutation = api.listings.update.useMutation();
   const allocateMutation = api.listings.allocateInventory.useMutation();
@@ -93,6 +89,21 @@ export function ListingForm({
     control: form.control,
     name: "components",
   });
+
+  const watchedComponents = form.watch("components");
+  const componentPartDetailIds = useMemo(
+    () => watchedComponents.map((c) => c.partDetailId).filter(Boolean),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(watchedComponents.map((c) => c.partDetailId))],
+  );
+  const { data: inventoryItems = [] } =
+    api.inventory.getAvailableForAllocation.useQuery(
+      {
+        listingId: defaultValues?.id,
+        partDetailIds: componentPartDetailIds,
+      },
+      { enabled: componentPartDetailIds.length > 0 },
+    );
 
   useEffect(() => {
     if (!open) return;
