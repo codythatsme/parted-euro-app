@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Trash2 } from "lucide-react";
+import { ClipboardCopy, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -74,6 +74,9 @@ export function ListingForm({
   const allocateMutation = api.listings.allocateInventory.useMutation();
 
   const [allocationIds, setAllocationIds] = useState<string[]>([]);
+  const [excludedImageIds, setExcludedImageIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -128,6 +131,7 @@ export function ListingForm({
         .filter((part) => part.status === "AVAILABLE")
         .map((part) => part.id);
       setAllocationIds(allocatedAvailableIds);
+      setExcludedImageIds(new Set());
       return;
     }
 
@@ -142,6 +146,7 @@ export function ListingForm({
     });
 
     setAllocationIds(initialPart?.ids ?? []);
+    setExcludedImageIds(new Set());
   }, [defaultValues, form, initialPart, open]);
 
   const selectableInventory = inventoryItems;
@@ -161,12 +166,14 @@ export function ListingForm({
     return inventoryItems
       .filter((item) => allocationIds.includes(item.id))
       .flatMap((item) =>
-        item.images.map((img) => ({
-          ...img,
-          partLabel: `${item.partDetails.name}${item.variant ? ` - ${item.variant}` : ""}`,
-        })),
+        item.images
+          .filter((img) => !excludedImageIds.has(img.id))
+          .map((img) => ({
+            ...img,
+            partLabel: `${item.partDetails.name}${item.variant ? ` - ${item.variant}` : ""}`,
+          })),
       );
-  }, [allocationIds, inventoryItems]);
+  }, [allocationIds, inventoryItems, excludedImageIds]);
 
   const isSubmitting =
     createMutation.isPending ||
@@ -180,7 +187,14 @@ export function ListingForm({
       condition: values.condition,
       price: values.price,
       components: values.components,
-      images: defaultValues?.images ?? [],
+      images:
+        isEditing && defaultValues
+          ? defaultValues.images
+          : allocatedImages.map((img, idx) => ({
+              id: img.id,
+              url: img.url,
+              order: idx,
+            })),
     };
 
     try {
@@ -208,7 +222,7 @@ export function ListingForm({
         });
       }
 
-       Promise.all([
+      void Promise.all([
         utils.listings.getAllAdmin.invalidate(),
         utils.inventory.getAvailableForAllocation.invalidate(),
       ]);
@@ -397,11 +411,24 @@ export function ListingForm({
                             );
                           }}
                         />
-                        <span className="text-xs">
+                        <span className="flex-1 text-xs">
                           {item.partDetails.name} ({item.partDetails.partNo})
                           {item.variant ? ` - ${item.variant}` : ""}
                           {item.donorVin ? ` [${item.donorVin}]` : ""}
                         </span>
+                        <button
+                          type="button"
+                          className="shrink-0 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            void navigator.clipboard.writeText(
+                              item.partDetails.partNo,
+                            );
+                            toast.success("Part number copied");
+                          }}
+                        >
+                          <ClipboardCopy className="h-3 w-3" />
+                        </button>
                       </label>
                     );
                   })}
@@ -424,6 +451,17 @@ export function ListingForm({
                           className="h-full w-full object-cover"
                         />
                       </div>
+                      <button
+                        type="button"
+                        className="absolute right-0.5 top-0.5 hidden rounded-full bg-black/70 p-0.5 text-white hover:bg-black group-hover:block"
+                        onClick={() =>
+                          setExcludedImageIds((prev) =>
+                            new Set(prev).add(image.id),
+                          )
+                        }
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                       <p className="mt-1 truncate text-[10px] text-muted-foreground">
                         {image.partLabel}
                       </p>
