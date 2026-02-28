@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Check, ChevronsUpDown, Search, Tag, X } from "lucide-react";
+import { Check, ChevronsUpDown, Tag, X } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import {
@@ -9,7 +9,6 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
 } from "~/components/ui/command";
 import {
   Popover,
@@ -51,7 +50,6 @@ export function FilterableInventorySelect({
   const [open, setOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [showOnlyUnassigned, setShowOnlyUnassigned] = React.useState(true);
-  const [focusedIndex, setFocusedIndex] = React.useState(-1);
 
   // Filter options based on search query and assignment filter
   const filteredOptions = React.useMemo(() => {

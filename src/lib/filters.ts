@@ -1,6 +1,14 @@
 import '@tanstack/table-core'
-import type { AccessorFn, Column, Row, RowData } from '@tanstack/react-table'
+import type {
+  AccessorFn,
+  Column,
+  ColumnDef,
+  ColumnFiltersState,
+  Row,
+  RowData,
+} from '@tanstack/react-table'
 import type { ColumnMeta, Table } from '@tanstack/react-table'
+import { z } from 'zod'
 import {
   endOfDay,
   isAfter,
@@ -15,6 +23,7 @@ import { intersection, uniq } from './array'
 export type ElementType<T> = T extends (infer U)[] ? U : T
 
 declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     /* The display name of the column. */
     displayName: string
@@ -624,7 +633,7 @@ export function optionFilterFn<TData>(
 ) {
   const value = row.getValue(columnId)
 
-  if (!value) return false
+  if (value === null || value === undefined) return false
 
   const columnMeta = filterValue.columnMeta!
 
@@ -685,7 +694,7 @@ export function multiOptionFilterFn<TData>(
 ) {
   const value = row.getValue(columnId)
 
-  if (!value) return false
+  if (value === null || value === undefined) return false
 
   const columnMeta = filterValue.columnMeta!
 
@@ -773,33 +782,50 @@ export function __dateFilterFn<TData>(
 
   const filterVals = filterValue.values
   const d1 = filterVals[0]
-  const d2 = filterVals[1]
 
   const value = inputData
 
   switch (filterValue.operator) {
-    case 'is':
+    case 'is': {
+      if (d1 === undefined) return false
       return isSameDay(value, d1)
-    case 'is not':
+    }
+    case 'is not': {
+      if (d1 === undefined) return false
       return !isSameDay(value, d1)
-    case 'is before':
+    }
+    case 'is before': {
+      if (d1 === undefined) return false
       return isBefore(value, startOfDay(d1))
-    case 'is on or after':
+    }
+    case 'is on or after': {
+      if (d1 === undefined) return false
       return isSameDay(value, d1) || isAfter(value, startOfDay(d1))
-    case 'is after':
+    }
+    case 'is after': {
+      if (d1 === undefined) return false
       return isAfter(value, startOfDay(d1))
-    case 'is on or before':
+    }
+    case 'is on or before': {
+      if (d1 === undefined) return false
       return isSameDay(value, d1) || isBefore(value, startOfDay(d1))
-    case 'is between':
+    }
+    case 'is between': {
+      const d2 = filterVals[1]
+      if (d1 === undefined || d2 === undefined) return false
       return isWithinInterval(value, {
         start: startOfDay(d1),
         end: endOfDay(d2),
       })
-    case 'is not between':
+    }
+    case 'is not between': {
+      const d2 = filterVals[1]
+      if (d1 === undefined || d2 === undefined) return false
       return !isWithinInterval(value, {
-        start: startOfDay(filterValue.values[0]),
-        end: endOfDay(filterValue.values[1]),
+        start: startOfDay(d1),
+        end: endOfDay(d2),
       })
+    }
   }
 }
 
@@ -820,7 +846,9 @@ export function __textFilterFn<TData>(
   if (!filterValue || filterValue.values.length === 0) return true
 
   const value = inputData.toLowerCase().trim()
-  const filterStr = filterValue.values[0].toLowerCase().trim()
+  const first = filterValue.values[0]
+  if (first === undefined) return true
+  const filterStr = first.toLowerCase().trim()
 
   if (filterStr === '') return true
 
@@ -848,12 +876,13 @@ export function __numberFilterFn<TData>(
   inputData: number,
   filterValue: FilterModel<'number', TData>,
 ) {
-  if (!filterValue || !filterValue.values || filterValue.values.length === 0) {
+  if (!filterValue?.values || filterValue.values.length === 0) {
     return true
   }
 
   const value = inputData
   const filterVal = filterValue.values[0]
+  if (filterVal === undefined) return true
 
   switch (filterValue.operator) {
     case 'is':
@@ -869,14 +898,14 @@ export function __numberFilterFn<TData>(
     case 'is less than or equal to':
       return value <= filterVal
     case 'is between': {
-      const lowerBound = filterValue.values[0]
       const upperBound = filterValue.values[1]
-      return value >= lowerBound && value <= upperBound
+      if (upperBound === undefined) return true
+      return value >= filterVal && value <= upperBound
     }
     case 'is not between': {
-      const lowerBound = filterValue.values[0]
       const upperBound = filterValue.values[1]
-      return value < lowerBound || value > upperBound
+      if (upperBound === undefined) return true
+      return value < filterVal || value > upperBound
     }
     default:
       return true
@@ -889,10 +918,10 @@ export function createNumberRange(values: number[] | undefined) {
 
   if (!values || values.length === 0) return [a, b]
   if (values.length === 1) {
-    a = values[0]
+    a = values[0] ?? 0
   } else {
-    a = values[0]
-    b = values[1]
+    a = values[0] ?? 0
+    b = values[1] ?? 0
   }
 
   const [min, max] = a < b ? [a, b] : [b, a]
@@ -920,4 +949,143 @@ export function getColumnMeta<TData>(table: Table<TData>, id: string) {
   }
 
   return column.columnDef.meta
+}
+
+/*** URL Serialization ***/
+
+/* Shape of a FilterModel's serializable fields (used as a type guard target) */
+interface SerializableFilterModel {
+  operator: string
+  values: unknown[]
+  columnMeta: { type: string }
+}
+
+function isSerializableFilterModel(
+  value: unknown,
+): value is SerializableFilterModel {
+  if (typeof value !== 'object' || value === null) return false
+  if (
+    !('operator' in value) ||
+    !('values' in value) ||
+    !('columnMeta' in value)
+  )
+    return false
+  const op = value.operator
+  const vals = value.values
+  const meta = value.columnMeta
+  if (typeof op !== 'string' || !Array.isArray(vals)) return false
+  if (typeof meta !== 'object' || meta === null || !('type' in meta))
+    return false
+  return typeof meta.type === 'string'
+}
+
+function isColumnDataType(value: string): value is ColumnDataType {
+  return value in filterTypeOperatorDetails
+}
+
+function getColumnDefId<TData, TValue>(
+  col: ColumnDef<TData, TValue>,
+): string | undefined {
+  if (col.id) return col.id
+  if ('accessorKey' in col) return String(col.accessorKey)
+  return undefined
+}
+
+const serializedFilterEntrySchema = z.object({
+  op: z.string(),
+  v: z.array(z.unknown()),
+  t: z.string(),
+})
+
+const serializedFiltersSchema = z.record(
+  z.string(),
+  serializedFilterEntrySchema,
+)
+
+/**
+ * Serializes column filters to a compact JSON string for URL persistence.
+ * Strips non-serializable columnMeta and converts Date values to ISO strings.
+ */
+export function serializeColumnFilters(
+  filters: ColumnFiltersState,
+): string {
+  const result: Record<
+    string,
+    z.infer<typeof serializedFilterEntrySchema>
+  > = {}
+
+  for (const { id, value } of filters) {
+    if (!isSerializableFilterModel(value)) continue
+    const type = value.columnMeta.type
+    if (!isColumnDataType(type)) continue
+
+    result[id] = {
+      op: value.operator,
+      v:
+        type === 'date'
+          ? value.values.map((v) =>
+              v instanceof Date ? v.toISOString() : v,
+            )
+          : value.values,
+      t: type,
+    }
+  }
+
+  return JSON.stringify(result)
+}
+
+/**
+ * Deserializes column filters from a URL parameter string.
+ * Validates operators, reconstructs Date objects, and reattaches columnMeta.
+ * Silently drops filters for unknown columns or invalid operators.
+ */
+export function deserializeColumnFilters<TData, TValue>(
+  raw: string,
+  columns: ReadonlyArray<ColumnDef<TData, TValue>>,
+): ColumnFiltersState {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+
+  const result = serializedFiltersSchema.safeParse(parsed)
+  if (!result.success) return []
+
+  const metaMap = new Map<
+    string,
+    NonNullable<ColumnDef<TData, TValue>['meta']>
+  >()
+  for (const col of columns) {
+    const colId = getColumnDefId(col)
+    if (colId && col.meta) {
+      metaMap.set(colId, col.meta)
+    }
+  }
+
+  const filters: ColumnFiltersState = []
+
+  for (const [id, entry] of Object.entries(result.data)) {
+    if (!isColumnDataType(entry.t)) continue
+
+    const meta = metaMap.get(id)
+    if (!meta) continue
+    if (meta.type !== entry.t) continue
+    if (!(entry.op in filterTypeOperatorDetails[entry.t])) continue
+
+    const values =
+      entry.t === 'date'
+        ? entry.v.map((val) =>
+            typeof val === 'string' ? new Date(val) : val,
+          )
+        : entry.v
+
+    filters.push({
+      id,
+      value: { operator: entry.op, values, columnMeta: meta },
+    })
+  }
+
+  return filters
 }

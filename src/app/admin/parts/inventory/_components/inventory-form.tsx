@@ -29,7 +29,6 @@ import {
 } from "~/components/ui/accordion";
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -49,18 +48,16 @@ import {
   ChevronsUpDown,
   Loader2,
   Plus,
-  Search,
   X,
   GripVertical,
   Image as ImageIcon,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
-import { Badge } from "~/components/ui/badge";
 import { type AdminInventoryItem } from "~/trpc/shared";
 import { useDebounce } from "~/hooks/use-debounce";
 import { VirtualizedMultiSelect } from "~/components/ui/virtualized-multi-select";
 import { AspectRatio } from "~/components/ui/aspect-ratio";
-import { UploadButton, UploadDropzone } from "~/components/CloudinaryUpload";
+import { UploadDropzone } from "~/components/CloudinaryUpload";
 import {
   DndContext,
   closestCenter,
@@ -81,7 +78,26 @@ import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import Compressor from "compressorjs";
 import { FilterableCarSelect } from "~/components/ui/filterable-car-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
+import { usePendingOrder } from "~/components/pending-order-provider";
 import { VirtualizedCombobox } from "~/components/ui/virtualized-combobox";
+import { ListingForm } from "~/app/admin/listings/_components/listing-form";
 
 // Define image item type for DnD
 type ImageItem = {
@@ -91,29 +107,53 @@ type ImageItem = {
   isFromPartImages?: boolean;
 };
 
-// Add an interface for part images
-interface PartImage {
+type PartImage = {
   id: string;
   url: string;
   order: number;
   partNo: string | null;
   variant?: string | null;
-}
+};
+
+type ListingAssignmentCandidate = {
+  id: string;
+  title: string;
+};
+
+type InventoryCreateAssignment = {
+  createdPartIds: string[];
+  autoAssignedListingId: string | null;
+  needsSelection: boolean;
+  noCandidates: boolean;
+  candidateListings: ListingAssignmentCandidate[];
+};
+
+type InventoryCreateResult = {
+  assignment: InventoryCreateAssignment;
+};
+
+type PendingListingAssignment = {
+  partNo: string;
+  createdPartIds: string[];
+  candidateListings: ListingAssignmentCandidate[];
+};
 
 // Define interfaces for API requests
-interface CreateInventoryInput {
+type CreateInventoryInput = {
   partDetailsId: string;
   donorVin?: string | null;
   inventoryLocationId?: string | null;
   variant?: string | null;
-  quantity: number;
+  count?: number;
+  status?: "AVAILABLE" | "RESERVED" | "SOLD" | "RETURNED";
+  allocatedToListingId?: string | null;
   images?: ImageItem[];
-}
+};
 
-interface UpdateInventoryInput {
+type UpdateInventoryInput = {
   id: string;
   data: CreateInventoryInput;
-}
+};
 
 // Sortable image component
 const SortableImage = ({
@@ -166,13 +206,17 @@ const SortableImage = ({
   );
 };
 
-interface InventoryFormProps {
+type InventoryFormProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultValues?: AdminInventoryItem;
   isEditing?: boolean;
   isDuplicating?: boolean;
-}
+  prefillPart?: {
+    partNo: string;
+    name?: string;
+  };
+};
 
 // Split the validation for better type safety
 // Combined schema for part and inventory
@@ -183,7 +227,8 @@ const formSchema = z
     donorVin: z.string().optional().nullable(),
     inventoryLocationId: z.string().optional().nullable(),
     variant: z.string().optional().nullable(),
-    quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+    status: z.enum(["AVAILABLE", "RESERVED", "SOLD", "RETURNED"]).default("AVAILABLE"),
+    count: z.coerce.number().int().min(1, "Count must be at least 1"),
     images: z
       .array(
         z.object({
@@ -237,9 +282,10 @@ export function InventoryForm({
   defaultValues,
   isEditing = false,
   isDuplicating = false,
+  prefillPart,
 }: InventoryFormProps) {
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
-  const [newLocationName, setNewLocationName] = useState("");
+  const [, setNewLocationName] = useState("");
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
   const [partSearchOpen, setPartSearchOpen] = useState(false);
   const [isNewPart, setIsNewPart] = useState(false);
@@ -261,6 +307,22 @@ export function InventoryForm({
     partTypes: string[];
   } | null>(null);
   const [formErrors, setFormErrors] = useState<string | null>(null);
+  const [pendingListingAssignment, setPendingListingAssignment] =
+    useState<PendingListingAssignment | null>(null);
+  const [selectedListingId, setSelectedListingId] = useState<string>("");
+  const [pendingListingCreate, setPendingListingCreate] = useState<{
+    partNo: string;
+    partName: string;
+    createdPartIds: string[];
+  } | null>(null);
+  const [showListingForm, setShowListingForm] = useState(false);
+  const [soldPartPrompt, setSoldPartPrompt] = useState<{
+    partIds: string[];
+    description: string;
+    partNo: string;
+    costPrice: number;
+  } | null>(null);
+  const pendingOrder = usePendingOrder();
 
   const utils = api.useUtils();
 
@@ -292,11 +354,15 @@ export function InventoryForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       id: isEditing && !isDuplicating ? defaultValues?.id : undefined,
-      partDetailsId: defaultValues?.partDetailsId ?? "",
+      partDetailsId:
+        !isEditing && !isDuplicating
+          ? (prefillPart?.partNo ?? "")
+          : (defaultValues?.partDetailsId ?? ""),
       donorVin: defaultValues?.donorVin ?? null,
       inventoryLocationId: defaultValues?.inventoryLocationId ?? null,
       variant: defaultValues?.variant ?? null,
-      quantity: defaultValues?.quantity ?? 1,
+      status: defaultValues?.status ?? "AVAILABLE",
+      count: 1,
       isNewPart: false,
       partNo: "",
       alternatePartNumbers: "",
@@ -364,21 +430,21 @@ export function InventoryForm({
       toast.error(`Error updating part: ${error.message}`);
     },
   });
+  const allocateMutation = api.listings.allocateInventory.useMutation({
+    onError: (error) => {
+      toast.error(`Error assigning inventory: ${error.message}`);
+    },
+  });
 
   const isSubmitting =
     form.formState.isSubmitting ||
     createInventoryMutation.isPending ||
     updateInventoryMutation.isPending ||
-    createPartMutation.isPending;
+    createPartMutation.isPending ||
+    allocateMutation.isPending;
 
   // For the part selection dropdown
   const selectedPartId = form.watch("partDetailsId");
-  const selectedPartDetails = React.useMemo(() => {
-    return selectedPartId
-      ? searchResults.find((part) => part.value === selectedPartId)
-      : null;
-  }, [selectedPartId, searchResults]);
-
   // Try to fetch part images if the API endpoint exists
   const partImagesQuery = api.part.getImagesByPartNo.useQuery(
     { partNo: selectedPartId ?? "" },
@@ -500,11 +566,14 @@ export function InventoryForm({
       // Reset form with new default values
       form.reset({
         id: isEditing && !isDuplicating ? defaultValues?.id : undefined,
-        partDetailsId: defaultValues?.partDetailsId ?? "",
+        partDetailsId:
+          !isEditing && !isDuplicating
+            ? (prefillPart?.partNo ?? "")
+            : (defaultValues?.partDetailsId ?? ""),
         donorVin: defaultValues?.donorVin ?? null,
         inventoryLocationId: defaultValues?.inventoryLocationId ?? null,
         variant: defaultValues?.variant ?? null,
-        quantity: defaultValues?.quantity ?? 1,
+        count: 1,
         isNewPart: false,
         partNo: "",
         alternatePartNumbers: "",
@@ -547,7 +616,15 @@ export function InventoryForm({
         }
       }
     }
-  }, [open, defaultValues, isEditing, isDuplicating, form, refetchPartDetails]);
+  }, [
+    open,
+    defaultValues,
+    isEditing,
+    isDuplicating,
+    prefillPart,
+    form,
+    refetchPartDetails,
+  ]);
 
   // Handle image upload completion
   const handleImageUpload = (
@@ -600,9 +677,74 @@ export function InventoryForm({
     });
   };
 
+  const invalidateAfterInventoryMutation = (partNo?: string) => {
+    void utils.inventory.getAll.invalidate();
+    void utils.part.getAll.invalidate();
+    void utils.listings.getAllAdmin.invalidate();
+    if (partNo) {
+      void utils.part.getById.invalidate({ partNo });
+      void utils.part.getImagesByPartNo.invalidate({ partNo });
+    }
+  };
+
+  const queueListingAssignmentPrompt = (
+    createResult: InventoryCreateResult,
+    partNo: string,
+  ): boolean => {
+    if (!createResult.assignment.needsSelection) {
+      return false;
+    }
+
+    setPendingListingAssignment({
+      partNo,
+      createdPartIds: createResult.assignment.createdPartIds,
+      candidateListings: createResult.assignment.candidateListings,
+    });
+    setSelectedListingId(createResult.assignment.candidateListings[0]?.id ?? "");
+    return true;
+  };
+
+  const clearPendingListingAssignment = () => {
+    setPendingListingAssignment(null);
+    setSelectedListingId("");
+  };
+
+  const handleLeaveUnallocated = () => {
+    const partNo = pendingListingAssignment?.partNo;
+    toast.message("Inventory left unallocated");
+    clearPendingListingAssignment();
+    onOpenChange(false);
+    invalidateAfterInventoryMutation(partNo);
+  };
+
+  const handleConfirmListingAssignment = async () => {
+    if (!pendingListingAssignment || !selectedListingId) {
+      toast.error("Please select a listing");
+      return;
+    }
+
+    try {
+      await allocateMutation.mutateAsync({
+        listingId: selectedListingId,
+        assignPartIds: pendingListingAssignment.createdPartIds,
+        unassignPartIds: [],
+      });
+      toast.success("Inventory assigned to listing");
+      clearPendingListingAssignment();
+      onOpenChange(false);
+      invalidateAfterInventoryMutation(pendingListingAssignment.partNo);
+    } catch (error) {
+      console.error("Error assigning inventory to listing:", error);
+    }
+  };
+
   const onSubmit = async (values: FormValues) => {
     try {
       setFormErrors(null);
+
+      // If user selected SOLD, keep part AVAILABLE — order endpoint marks SOLD
+      const wantsSold = values.status === "SOLD";
+      const statusForApi = wantsSold ? "AVAILABLE" : values.status;
 
       // Include ordered images
       const imagesWithOrder = images.map((img, index) => ({
@@ -654,7 +796,8 @@ export function InventoryForm({
               donorVin: values.donorVin,
               inventoryLocationId: values.inventoryLocationId,
               variant: values.variant,
-              quantity: values.quantity,
+              status: statusForApi,
+              count: values.count,
               images: imagesWithOrder,
             };
 
@@ -664,19 +807,52 @@ export function InventoryForm({
                 data: inventoryData,
               });
               toast.success("Inventory item updated successfully");
+              if (wantsSold) {
+                setSoldPartPrompt({
+                  partIds: [defaultValues.id],
+                  description: `${values.name ?? partDetails?.name ?? "Part"} - ${values.partNo ?? newPart.partNo}`,
+                  partNo: values.partNo ?? newPart.partNo,
+                  costPrice: values.costPrice ?? 0,
+                });
+              }
+              onOpenChange(false);
             } else {
-              await createInventoryMutation.mutateAsync(inventoryData);
-              toast.success("Inventory item created successfully");
-            }
+              let needsSelection = false;
+              const createResult =
+                await createInventoryMutation.mutateAsync(inventoryData);
+              needsSelection = queueListingAssignmentPrompt(createResult, newPart.partNo);
 
-            // Success - close the form
-            onOpenChange(false);
-            void utils.inventory.getAll.invalidate();
+              if (wantsSold) {
+                setSoldPartPrompt({
+                  partIds: createResult.assignment.createdPartIds,
+                  description: `${values.name ?? "Part"} - ${newPart.partNo}`,
+                  partNo: newPart.partNo,
+                  costPrice: values.costPrice ?? 0,
+                });
+                onOpenChange(false);
+              } else if (createResult.assignment.noCandidates) {
+                setPendingListingCreate({
+                  partNo: newPart.partNo,
+                  partName: values.name ?? "",
+                  createdPartIds: createResult.assignment.createdPartIds,
+                });
+                toast.success("Inventory item created");
+                onOpenChange(false);
+              } else if (!needsSelection) {
+                if (createResult.assignment.autoAssignedListingId) {
+                  toast.success("Inventory item created and auto-assigned to listing");
+                } else {
+                  toast.success("Inventory item created successfully");
+                }
+                onOpenChange(false);
+              } else {
+                toast.success(
+                  "Inventory item created. Select which listing should receive it.",
+                );
+              }
+            }
+            invalidateAfterInventoryMutation(newPart.partNo);
             void utils.part.getAllPartDetails.invalidate();
-            void utils.part.getById.invalidate({ partNo: newPart.partNo });
-            void utils.part.getImagesByPartNo.invalidate({
-              partNo: newPart.partNo,
-            });
           } else {
             setFormErrors("Failed to create part. Please try again.");
           }
@@ -736,6 +912,7 @@ export function InventoryForm({
 
         // Update or create inventory item
         try {
+          let shouldCloseAfterSave = true;
           if (isEditing && !isDuplicating && defaultValues) {
             const updateData: UpdateInventoryInput = {
               id: defaultValues.id,
@@ -744,36 +921,66 @@ export function InventoryForm({
                 donorVin: values.donorVin,
                 inventoryLocationId: values.inventoryLocationId,
                 variant: values.variant,
-                quantity: values.quantity,
+                status: statusForApi,
                 images: imagesWithOrder,
               },
             };
             await updateInventoryMutation.mutateAsync(updateData);
             toast.success("Inventory item updated successfully");
+            if (wantsSold) {
+              setSoldPartPrompt({
+                partIds: [defaultValues.id],
+                description: `${values.name ?? partDetails?.name ?? "Part"} - ${values.partDetailsId ?? ""}`,
+                partNo: values.partDetailsId ?? "",
+                costPrice: values.costPrice ?? 0,
+              });
+            }
           } else {
+            let needsSelection = false;
             const createData: CreateInventoryInput = {
               partDetailsId: values.partDetailsId ?? "",
               donorVin: values.donorVin,
               inventoryLocationId: values.inventoryLocationId,
               variant: values.variant,
-              quantity: values.quantity,
+              status: statusForApi,
+              count: values.count,
               images: imagesWithOrder,
             };
-            await createInventoryMutation.mutateAsync(createData);
-            toast.success("Inventory item created successfully");
-          }
+            const createResult = await createInventoryMutation.mutateAsync(createData);
+            const partNo = values.partDetailsId ?? "";
+            needsSelection = queueListingAssignmentPrompt(createResult, partNo);
 
-          // Success - close the form
-          onOpenChange(false);
-          void utils.inventory.getAll.invalidate();
-          if (values.partDetailsId) {
-            void utils.part.getById.invalidate({
-              partNo: values.partDetailsId,
-            });
-            void utils.part.getImagesByPartNo.invalidate({
-              partNo: values.partDetailsId,
-            });
+            if (wantsSold) {
+              setSoldPartPrompt({
+                partIds: createResult.assignment.createdPartIds,
+                description: `${values.name ?? partDetails?.name ?? "Part"} - ${partNo}`,
+                partNo,
+                costPrice: values.costPrice ?? 0,
+              });
+            } else if (createResult.assignment.noCandidates) {
+              setPendingListingCreate({
+                partNo,
+                partName: values.name ?? "",
+                createdPartIds: createResult.assignment.createdPartIds,
+              });
+              toast.success("Inventory item created");
+            } else if (!needsSelection) {
+              if (createResult.assignment.autoAssignedListingId) {
+                toast.success("Inventory item created and auto-assigned to listing");
+              } else {
+                toast.success("Inventory item created successfully");
+              }
+            } else {
+              toast.success(
+                "Inventory item created. Select which listing should receive it.",
+              );
+            }
+            shouldCloseAfterSave = wantsSold || (!needsSelection && !createResult.assignment.noCandidates);
           }
+          if (shouldCloseAfterSave) {
+            onOpenChange(false);
+          }
+          invalidateAfterInventoryMutation(values.partDetailsId ?? undefined);
         } catch (error) {
           console.error("Error with inventory operation:", error);
           setFormErrors(
@@ -1136,7 +1343,7 @@ export function InventoryForm({
                     <FormField
                       control={form.control}
                       name="cars"
-                      render={({ field }) => (
+                      render={({ field: _field }) => (
                         <FormItem className="flex flex-col">
                           <FormLabel>Compatible Cars</FormLabel>
                           <FormControl>
@@ -1161,7 +1368,7 @@ export function InventoryForm({
                     <FormField
                       control={form.control}
                       name="partTypes"
-                      render={({ field }) => (
+                      render={({ field: _field }) => (
                         <FormItem className="flex flex-col">
                           <FormLabel>Part Categories</FormLabel>
                           <FormControl>
@@ -1250,10 +1457,10 @@ export function InventoryForm({
 
                     <FormField
                       control={form.control}
-                      name="quantity"
+                      name="count"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Quantity*</FormLabel>
+                          <FormLabel>Create Multiple</FormLabel>
                           <FormControl>
                             <Input type="number" min={1} {...field} />
                           </FormControl>
@@ -1261,6 +1468,43 @@ export function InventoryForm({
                         </FormItem>
                       )}
                     />
+
+                    <FormField
+                      control={form.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                            defaultValue={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="AVAILABLE">Available</SelectItem>
+                              <SelectItem value="RESERVED">Reserved</SelectItem>
+                              <SelectItem value="SOLD">Sold</SelectItem>
+                              <SelectItem value="RETURNED">Returned</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {defaultValues && (
+                      <div className="text-xs text-muted-foreground">
+                        Allocated To:{" "}
+                        <span className="font-medium text-foreground">
+                          {defaultValues.allocatedToListing?.title ?? "Unallocated"}
+                        </span>
+                      </div>
+                    )}
 
                     <FormField
                       control={form.control}
@@ -1291,7 +1535,7 @@ export function InventoryForm({
                               // Create a promise for each file to be compressed
                               const compressPromises = files.map(
                                 (file) =>
-                                  new Promise<File>((resolve, reject) => {
+                                  new Promise<File>((resolve, _reject) => {
                                     // Skip compression for non-image files
                                     if (!file.type.startsWith("image/")) {
                                       resolve(file);
@@ -1642,6 +1886,176 @@ export function InventoryForm({
           </Form>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={!!pendingListingAssignment}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            handleLeaveUnallocated();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Choose Listing for New Inventory</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Multiple active listings use part{" "}
+              <span className="font-medium text-foreground">
+                {pendingListingAssignment?.partNo}
+              </span>
+              . Select which listing should receive this inventory now.
+            </p>
+
+            <VirtualizedCombobox
+              options={(pendingListingAssignment?.candidateListings ?? []).map(
+                (listing) => ({
+                  value: listing.id,
+                  label: listing.title,
+                }),
+              )}
+              value={selectedListingId}
+              onChange={setSelectedListingId}
+              placeholder="Select a listing"
+              searchPlaceholder="Search listings..."
+              disabled={allocateMutation.isPending}
+            />
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleLeaveUnallocated}
+              disabled={allocateMutation.isPending}
+            >
+              Leave Unallocated
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmListingAssignment}
+              disabled={allocateMutation.isPending || !selectedListingId}
+            >
+              {allocateMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Assign Inventory
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!pendingListingCreate && !showListingForm}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setPendingListingCreate(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>No Listing Found</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            No listing exists for{" "}
+            <span className="font-medium text-foreground">
+              {pendingListingCreate?.partNo}
+            </span>
+            . Would you like to create one now?
+          </p>
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingListingCreate(null)}
+            >
+              No
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setShowListingForm(true)}
+            >
+              Create Listing
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {showListingForm && pendingListingCreate && (
+        <ListingForm
+          open={showListingForm}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              setShowListingForm(false);
+              invalidateAfterInventoryMutation(pendingListingCreate.partNo);
+              setPendingListingCreate(null);
+            }
+          }}
+          initialPart={{
+            ids: pendingListingCreate.createdPartIds,
+            name: pendingListingCreate.partName,
+            partNo: pendingListingCreate.partNo,
+          }}
+        />
+      )}
+
+      <AlertDialog
+        open={soldPartPrompt !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setSoldPartPrompt(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add to pending order?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {soldPartPrompt?.partIds.length === 1
+                ? "This part has been created. Would you like to add it to a pending order?"
+                : `${soldPartPrompt?.partIds.length} parts created. Add them to a pending order?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Skip</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!soldPartPrompt) return;
+                for (const partId of soldPartPrompt.partIds) {
+                  pendingOrder.addItem({
+                    partId,
+                    partNo: soldPartPrompt.partNo,
+                    description: soldPartPrompt.description,
+                    price: soldPartPrompt.costPrice,
+                  });
+                }
+                toast.success(`Added ${soldPartPrompt.partIds.length} item(s) to pending order`);
+                setSoldPartPrompt(null);
+              }}
+            >
+              Add to Order
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={() => {
+                if (!soldPartPrompt) return;
+                for (const partId of soldPartPrompt.partIds) {
+                  pendingOrder.addItem({
+                    partId,
+                    partNo: soldPartPrompt.partNo,
+                    description: soldPartPrompt.description,
+                    price: soldPartPrompt.costPrice,
+                  });
+                }
+                pendingOrder.openFinalize();
+                setSoldPartPrompt(null);
+              }}
+            >
+              Create Order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

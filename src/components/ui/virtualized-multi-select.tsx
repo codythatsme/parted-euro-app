@@ -215,11 +215,9 @@ export function VirtualizedMultiSelect({
   onChange,
   placeholder = "Select options",
   searchPlaceholder = "Search...",
-  width = "100%",
   height = "300px",
   triggerClassName,
   disabled = false,
-  maxDisplayCount = 3,
 }: VirtualizedMultiSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [selectedOptions, setSelectedOptions] = React.useState<string[]>(

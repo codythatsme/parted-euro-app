@@ -31,7 +31,7 @@ export function DeleteCategoryDialog({
     onSuccess: () => {
       toast.success("Category deleted successfully");
       onOpenChange(false);
-      utils.category.getAll.invalidate();
+      void utils.category.getAll.invalidate();
     },
     onError: (error) => {
       toast.error(`Error deleting category: ${error.message}`);

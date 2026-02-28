@@ -4,10 +4,14 @@ import * as React from "react";
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type ExpandedState,
+  type FilterFn,
+  type Row,
   type SortingState,
   type VisibilityState,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
@@ -27,6 +31,13 @@ import {
 } from "~/components/ui/table";
 import { Input } from "~/components/ui/input";
 import { DataTablePagination } from "./data-table-pagination";
+import { useQueryState } from "nuqs";
+import { DataTableFilter } from "~/components/data-table-filter";
+import {
+  deserializeColumnFilters,
+  filterFn,
+  serializeColumnFilters,
+} from "~/lib/filters";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -39,6 +50,10 @@ interface DataTableProps<TData, TValue> {
   setPageIndex: (value: number | null) => void;
   pageSize: number;
   setPageSize: (value: number | null) => void;
+  initialColumnVisibility?: VisibilityState;
+  getRowCanExpand?: (row: TData) => boolean;
+  renderExpandedRow?: (row: Row<TData>) => React.ReactNode;
+  globalFilterFn?: FilterFn<TData>;
 }
 
 export function DataTable<TData, TValue>({
@@ -52,28 +67,72 @@ export function DataTable<TData, TValue>({
   setPageIndex,
   pageSize,
   setPageSize,
+  initialColumnVisibility,
+  getRowCanExpand,
+  renderExpandedRow,
+  globalFilterFn,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    [],
+
+  const [filtersParam, setFiltersParam] = useQueryState("filters", {
+    defaultValue: "",
+  });
+
+  const columnFilters = React.useMemo(
+    () =>
+      filtersParam
+        ? deserializeColumnFilters(filtersParam, columns)
+        : [],
+    [filtersParam, columns],
   );
 
+  const handleColumnFiltersChange = React.useCallback(
+    (
+      updater:
+        | ColumnFiltersState
+        | ((old: ColumnFiltersState) => ColumnFiltersState),
+    ) => {
+      const next =
+        typeof updater === "function" ? updater(columnFilters) : updater;
+      void setFiltersParam(
+        next.length === 0 ? null : serializeColumnFilters(next),
+      );
+    },
+    [columnFilters, setFiltersParam],
+  );
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+    React.useState<VisibilityState>(initialColumnVisibility ?? {});
   const [rowSelection, setRowSelection] = React.useState({});
+  const [expanded, setExpanded] = React.useState<ExpandedState>({});
+
+  const columnsWithFilterFns = React.useMemo(
+    () =>
+      columns.map((col) => {
+        if (col.meta?.type && !col.filterFn) {
+          return { ...col, filterFn: filterFn(col.meta.type) }
+        }
+        return col
+      }),
+    [columns],
+  );
 
   const table = useReactTable({
     data,
-    columns,
+    columns: columnsWithFilterFns,
     onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
+    onColumnFiltersChange: handleColumnFiltersChange,
     onGlobalFilterChange: (value: string) => void setGlobalFilter(value),
+    ...(globalFilterFn != null && { globalFilterFn }),
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
+    getExpandedRowModel: getExpandedRowModel(),
+    getRowCanExpand: (row) =>
+      getRowCanExpand ? getRowCanExpand(row.original) : false,
+    onExpandedChange: setExpanded,
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     autoResetPageIndex: false,
@@ -93,6 +152,7 @@ export function DataTable<TData, TValue>({
       globalFilter: globalFilter || "",
       columnVisibility,
       rowSelection,
+      expanded,
       pagination: {
         pageIndex,
         pageSize,
@@ -103,7 +163,7 @@ export function DataTable<TData, TValue>({
   // When the global search changes, reset to the first page for better UX
   React.useEffect(() => {
     table.setPageIndex(0);
-  }, [globalFilter]);
+  }, [globalFilter, columnFilters]);
 
   // Update the parent component when selection changes
   React.useEffect(() => {
@@ -117,16 +177,17 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="flex w-full items-center justify-between">
-        <div>
+      <div className="flex w-full items-start gap-4">
+        <div className="min-w-0 flex-1">
+          <DataTableFilter table={table} />
           {table.getFilteredSelectedRowModel().rows.length > 0 && (
-            <p className="text-sm text-muted-foreground">
+            <p className="mt-2 text-sm text-muted-foreground">
               {table.getFilteredSelectedRowModel().rows.length} of{" "}
               {table.getFilteredRowModel().rows.length} row(s) selected
             </p>
           )}
         </div>
-        <div className="relative max-w-sm">
+        <div className="relative max-w-sm shrink-0">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search..."
@@ -163,28 +224,36 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                  id={row.id}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      style={
-                        cell.column.columnDef.size !== undefined
-                          ? { width: cell.column.getSize() }
-                          : undefined
-                      }
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
+                <React.Fragment key={row.id}>
+                  <TableRow
+                    data-state={row.getIsSelected() && "selected"}
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    id={row.id}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell
+                        key={cell.id}
+                        style={
+                          cell.column.columnDef.size !== undefined
+                            ? { width: cell.column.getSize() }
+                            : undefined
+                        }
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {row.getIsExpanded() && renderExpandedRow && (
+                    <TableRow>
+                      <TableCell colSpan={row.getVisibleCells().length}>
+                        {renderExpandedRow(row)}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
               ))
             ) : (
               <TableRow>

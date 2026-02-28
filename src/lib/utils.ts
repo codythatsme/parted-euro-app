@@ -11,7 +11,7 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function formatDate(
   date: Date | string | number,
-  formatStr: string = "PPP",
+  formatStr = "PPP",
 ) {
   if (!date) return "";
 
@@ -27,7 +27,7 @@ export function formatDate(
 export function formatCurrency(
   amount: number,
   options: Intl.NumberFormatOptions = {},
-  locale: string = "en-US",
+  locale = "en-US",
 ) {
   return new Intl.NumberFormat(locale, {
     style: "currency",

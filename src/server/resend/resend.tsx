@@ -17,19 +17,22 @@ function generateOrderEmailHTML(order: OrderWithItems): string {
   if (!order) throw new Error("Order not found");
   const orderItemsHTML = order.orderItems
     .map(
-      (item) => `
+      (item) => {
+        const title = item.listing?.title ?? item.description ?? "Direct sale";
+        const imageUrl = item.listing?.images[0]?.url;
+        const price = item.unitPrice;
+        return `
     <tr>
       <td>
-        <img src="${
-          item.listing.images[0]?.url
-        }" alt="Product Image" width="60" height="60" style="vertical-align: middle; margin-right: 10px;">
-        ${item.listing.title}
+        ${imageUrl ? `<img src="${imageUrl}" alt="Product Image" width="60" height="60" style="vertical-align: middle; margin-right: 10px;">` : ""}
+        ${title}
       </td>
-      <td>${formatCurrency(item.listing.price)}</td>
+      <td>${formatCurrency(price)}</td>
       <td>${item.quantity}</td>
-      <td>${formatCurrency(item.listing.price * item.quantity)}</td>
+      <td>${formatCurrency(price * item.quantity)}</td>
     </tr>
-  `,
+  `;
+      },
     )
     .join("");
 
@@ -145,18 +148,21 @@ function generatePickupOrderEmailHTML(order: OrderWithItems): string {
   if (!order) throw new Error("Order not found");
   const orderItemsHTML = order.orderItems
     .map(
-      (item, index) => `
+      (item) => {
+        const title = item.listing?.title ?? item.description ?? "Direct sale";
+        const imageUrl = item.listing?.images[0]?.url;
+        const price = item.unitPrice;
+        return `
     <tr>
       <td>
-        <img src="${
-          item.listing.images[0]?.url
-        }" alt="Product Image" width="60" height="60" style="vertical-align: middle; margin-right: 10px;">
+        ${imageUrl ? `<img src="${imageUrl}" alt="Product Image" width="60" height="60" style="vertical-align: middle; margin-right: 10px;">` : ""}
       </td>
-      <td>${item.listing.title}</td>
-      <td>${formatCurrency(item.listing.price)}</td>
+      <td>${title}</td>
+      <td>${formatCurrency(price)}</td>
       <td>${item.quantity}</td>
     </tr>
-  `,
+  `;
+      },
     )
     .join("");
 

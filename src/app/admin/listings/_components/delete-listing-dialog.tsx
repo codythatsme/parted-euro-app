@@ -13,13 +13,13 @@ import {
 import { Button } from "~/components/ui/button";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { type ListingItem } from "../page";
+import { type AdminListingsItem } from "~/trpc/shared";
 
-interface DeleteListingDialogProps {
+type DeleteListingDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  listing: ListingItem;
-}
+  listing: AdminListingsItem;
+};
 
 export function DeleteListingDialog({
   open,
@@ -31,7 +31,7 @@ export function DeleteListingDialog({
 
   const deleteMutation = api.listings.delete.useMutation({
     onSuccess: () => {
-      toast.success("Listing deleted successfully");
+      toast.success("Listing retired successfully");
       onOpenChange(false);
       void utils.listings.getAllAdmin.invalidate();
     },
@@ -50,10 +50,10 @@ export function DeleteListingDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Delete Listing</DialogTitle>
+          <DialogTitle>Retire Listing</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete the listing "{listing.title}"? This
-            action cannot be undone.
+            This will retire &quot;{listing.title}&quot; by setting it inactive.
+            Historical order references are preserved.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -72,7 +72,7 @@ export function DeleteListingDialog({
             disabled={isDeleting}
           >
             {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Delete
+            Retire
           </Button>
         </DialogFooter>
       </DialogContent>

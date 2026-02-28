@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Image from "next/image";
 import Autoplay from "embla-carousel-autoplay";
 
@@ -16,10 +15,6 @@ export function HomepageCarousel({
 }: {
   images: Partial<HomepageImage>[];
 }) {
-  const [plugin] = useState(() =>
-    Autoplay({ delay: 5000, stopOnInteraction: true }),
-  );
-
   return (
     <Carousel
       plugins={[

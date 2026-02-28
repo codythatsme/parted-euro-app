@@ -11,6 +11,7 @@ const config = {
     "plugin:@typescript-eslint/stylistic-type-checked",
   ],
   rules: {
+    "@next/next/no-img-element": "off",
     "@typescript-eslint/array-type": "off",
     "react-hooks/exhaustive-deps": "off",
     "@typescript-eslint/consistent-type-definitions": "off",
@@ -25,6 +26,8 @@ const config = {
       "warn",
       {
         argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_",
       },
     ],
     "@typescript-eslint/require-await": "off",

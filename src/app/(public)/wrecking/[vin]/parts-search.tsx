@@ -15,17 +15,6 @@ type DonorPartsSearchProps = {
   vin: string;
 };
 
-type PartCategory = {
-  id: string;
-  name: string;
-  children: PartSubcategory[];
-};
-
-type PartSubcategory = {
-  id: string;
-  name: string;
-};
-
 type PartListing = {
   id: string;
   title: string;

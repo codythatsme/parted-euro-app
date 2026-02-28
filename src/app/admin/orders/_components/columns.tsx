@@ -2,19 +2,19 @@
 
 import { type ColumnDef } from "@tanstack/react-table";
 import {
-  MoreHorizontal,
-  Eye,
-  Truck,
-  Package,
-  MoreVertical,
+  Calendar,
   Check,
-  X,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
+  CircleDot,
+  DollarSign,
+  Eye,
+  FileText,
+  MoreHorizontal,
+  MoreVertical,
+  Package,
   Pencil,
-  Trash,
   RefreshCw,
+  Truck,
+  X,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
@@ -29,8 +29,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { Badge } from "~/components/ui/badge";
 import { type AdminOrdersItem } from "~/trpc/shared";
-import { formatDistanceToNow } from "date-fns";
-import { CreditCard, FileText, SendHorizontal, Tag } from "lucide-react";
+import { downloadPickSheet } from "./pick-sheet-pdf";
 import { DataTableColumnHeader } from "~/components/data-table/data-table-column-header";
 
 // Format currency
@@ -101,6 +100,11 @@ export function getOrderColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Created At" />
       ),
+      meta: {
+        displayName: "Created At",
+        icon: Calendar,
+        type: "date",
+      },
       cell: ({ row }) => {
         const date = new Date(row.original.createdAt);
         return date.toLocaleDateString("en-US", {
@@ -130,6 +134,20 @@ export function getOrderColumns({
     {
       accessorKey: "status",
       header: "Status",
+      meta: {
+        displayName: "Status",
+        icon: CircleDot,
+        type: "option",
+        options: [
+          { label: "Pending", value: "Pending" },
+          { label: "Paid", value: "Paid" },
+          { label: "Processing", value: "Processing" },
+          { label: "Shipped", value: "Shipped" },
+          { label: "Ready for pickup", value: "Ready for pickup" },
+          { label: "COMPLETED", value: "COMPLETED" },
+          { label: "Cancelled", value: "Cancelled" },
+        ],
+      },
       cell: ({ row }) => {
         const status = row.original.status;
         return (
@@ -140,6 +158,15 @@ export function getOrderColumns({
     {
       accessorKey: "shippingMethod",
       header: "Shipping",
+      meta: {
+        displayName: "Shipping",
+        icon: Truck,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s, value: s };
+        },
+      },
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span>{row.original.shippingMethod ?? ""}</span>
@@ -267,6 +294,11 @@ export function getOrderColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Total" />
       ),
+      meta: {
+        displayName: "Total",
+        icon: DollarSign,
+        type: "number",
+      },
       cell: ({ row }) => {
         const subtotal = row.original.subtotal;
         const shipping = row.original.shipping * 100 || 0;
@@ -291,6 +323,11 @@ export function getOrderColumns({
               <DropdownMenuItem onClick={() => onViewDetails(order)}>
                 <Eye className="mr-2 h-4 w-4" />
                 View Details
+              </DropdownMenuItem>
+
+              <DropdownMenuItem onClick={() => void downloadPickSheet(order)}>
+                <FileText className="mr-2 h-4 w-4" />
+                Print Pick Sheet
               </DropdownMenuItem>
 
               <DropdownMenuItem onClick={() => onAddTracking(order)}>

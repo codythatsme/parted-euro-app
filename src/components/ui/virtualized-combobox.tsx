@@ -217,7 +217,6 @@ export function VirtualizedCombobox({
   onChange,
   placeholder = "Select an option",
   searchPlaceholder = "Search...",
-  width = "100%",
   height = "300px",
   triggerClassName,
   disabled = false,

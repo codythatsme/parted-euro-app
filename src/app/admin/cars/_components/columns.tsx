@@ -1,7 +1,7 @@
 "use client";
 
-import { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, Pencil, Trash } from "lucide-react";
+import { type ColumnDef } from "@tanstack/react-table";
+import { Car, Layers, MoreHorizontal, Pencil, Shapes, Trash } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -27,18 +27,45 @@ export function getCarColumns({
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Make" />
       ),
+      meta: {
+        displayName: "Make",
+        icon: Car,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s, value: s };
+        },
+      },
     },
     {
       accessorKey: "series",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Series" />
       ),
+      meta: {
+        displayName: "Series",
+        icon: Layers,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s, value: s };
+        },
+      },
     },
     {
       accessorKey: "generation",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Generation" />
       ),
+      meta: {
+        displayName: "Generation",
+        icon: Shapes,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s, value: s };
+        },
+      },
     },
     {
       accessorKey: "model",

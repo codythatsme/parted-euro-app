@@ -58,7 +58,7 @@ export function CarForm({
         series: defaultValues.series,
         generation: defaultValues.generation,
         model: defaultValues.model,
-        body: defaultValues.body || "",
+        body: defaultValues.body ?? "",
       }
     : {
         make: "",
@@ -79,8 +79,8 @@ export function CarForm({
       form.reset();
       onOpenChange(false);
       // Invalidate the car queries to trigger a refetch
-      utils.car.getAll.invalidate();
-      utils.car.getAllSeries.invalidate();
+      void utils.car.getAll.invalidate();
+      void utils.car.getAllSeries.invalidate();
       router.refresh();
     },
     onError: (error) => {
@@ -94,8 +94,8 @@ export function CarForm({
       form.reset();
       onOpenChange(false);
       // Invalidate the car queries to trigger a refetch
-      utils.car.getAll.invalidate();
-      utils.car.getAllSeries.invalidate();
+      void utils.car.getAll.invalidate();
+      void utils.car.getAllSeries.invalidate();
       router.refresh();
     },
     onError: (error) => {

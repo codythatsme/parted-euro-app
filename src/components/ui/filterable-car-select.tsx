@@ -8,7 +8,6 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
 } from "~/components/ui/command";
 import {
   Popover,
@@ -18,7 +17,7 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/utils";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Check, ChevronsUpDown, X, Filter } from "lucide-react";
+import { Check, ChevronsUpDown, X } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -26,8 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { Separator } from "~/components/ui/separator";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import { Checkbox } from "~/components/ui/checkbox";
 
 export type CarOption = {
@@ -473,7 +470,7 @@ export function FilterableCarSelect({
                       );
                     })
                   : // Fallback rendering when virtualizer hasn't initialized properly
-                    filteredOptions.slice(0, 50).map((option, index) => {
+                    filteredOptions.slice(0, 50).map((option, _index) => {
                       const isSelected = selectedOptions.includes(option.value);
                       return (
                         <CommandItem

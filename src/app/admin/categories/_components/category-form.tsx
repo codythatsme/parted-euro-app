@@ -56,9 +56,9 @@ export function CategoryForm({
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      id: defaultValues?.id || undefined,
-      name: defaultValues?.name || "",
-      parentId: defaultValues?.parentId || null,
+      id: defaultValues?.id ?? undefined,
+      name: defaultValues?.name ?? "",
+      parentId: defaultValues?.parentId ?? null,
     },
   });
 
@@ -78,9 +78,7 @@ export function CategoryForm({
     }
   }, [defaultValues, form, open]);
 
-  const { data: categories } = api.category.getAll.useQuery({
-    limit: 100,
-  });
+  const { data: categories } = api.category.getAll.useQuery();
 
   // Filter out the current category and its children if editing
   const filteredCategories = categories?.items.filter((category) => {
@@ -121,7 +119,7 @@ export function CategoryForm({
         },
         {
           onSuccess: () => {
-            utils.category.getAll.invalidate();
+            void utils.category.getAll.invalidate();
           },
         },
       );
@@ -133,7 +131,7 @@ export function CategoryForm({
         },
         {
           onSuccess: () => {
-            utils.category.getAll.invalidate();
+            void utils.category.getAll.invalidate();
           },
         },
       );
@@ -174,7 +172,7 @@ export function CategoryForm({
                     onValueChange={(value) =>
                       field.onChange(value === "none" ? null : value)
                     }
-                    value={field.value || "none"}
+                    value={field.value ?? "none"}
                   >
                     <FormControl>
                       <SelectTrigger>

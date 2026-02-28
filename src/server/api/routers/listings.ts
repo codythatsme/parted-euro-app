@@ -1,7 +1,29 @@
-import { z } from "zod";
-import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
+import { PartStatus, type Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
-import { type Prisma } from "@prisma/client";
+import { z } from "zod";
+import {
+  calculateComponentAvailability,
+  calculateRequiredPartCounts,
+  calculateStock,
+} from "~/server/lib/stock";
+import { syncEbayQuantitiesForListings, syncEbayQuantityForListing } from "~/server/lib/ebay-sync";
+import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
+
+const componentSchema = z.object({
+  partDetailId: z.string().trim().min(1),
+  quantity: z.number().int().min(1),
+});
+
+type StockListingInput = {
+  components: Array<{
+    partDetailId: string;
+    quantity: number;
+  }>;
+  allocatedParts: Array<{
+    partDetailsId: string;
+    status: PartStatus;
+  }>;
+};
 
 const prepareSearchTerms = (search: string | undefined): string[] => {
   if (!search) return [];
@@ -11,6 +33,53 @@ const prepareSearchTerms = (search: string | undefined): string[] => {
     .filter((term) => term.length > 0);
 };
 
+const withStock = <T extends StockListingInput>(listing: T) => ({
+  ...listing,
+  stock: calculateStock({
+    components: listing.components.map((component) => ({
+      partDetailId: component.partDetailId,
+      quantity: component.quantity,
+    })),
+    inventoryParts: listing.allocatedParts.map((part) => ({
+      partDetailsId: part.partDetailsId,
+      status: part.status,
+    })),
+  }),
+  componentAvailability: calculateComponentAvailability({
+    components: listing.components.map((component) => ({
+      partDetailId: component.partDetailId,
+      quantity: component.quantity,
+    })),
+    inventoryParts: listing.allocatedParts.map((part) => ({
+      partDetailsId: part.partDetailsId,
+      status: part.status,
+    })),
+  }),
+});
+
+const allocateUnallocatedInventory = async (input: {
+  tx: Prisma.TransactionClient;
+  listingId: string;
+  componentPartDetailIds: string[];
+}) => {
+  if (input.componentPartDetailIds.length === 0) {
+    return;
+  }
+
+  await input.tx.part.updateMany({
+    where: {
+      status: PartStatus.AVAILABLE,
+      allocatedToListingId: null,
+      partDetailsId: {
+        in: input.componentPartDetailIds,
+      },
+    },
+    data: {
+      allocatedToListingId: input.listingId,
+    },
+  });
+};
+
 export const listingsRouter = createTRPCRouter({
   getAllAdmin: adminProcedure.query(async ({ ctx }) => {
     const items = await ctx.db.listing.findMany({
@@ -18,26 +87,26 @@ export const listingsRouter = createTRPCRouter({
         createdAt: "desc",
       },
       include: {
-        parts: {
-          select: {
-            id: true,
-            variant: true,
-            quantity: true,
-            partDetails: {
-              select: {
-                partNo: true,
-                name: true,
-                cars: {
-                  select: {
-                    id: true,
-                    generation: true,
-                    series: true,
-                    model: true,
-                    body: true,
-                  },
-                },
+        components: {
+          include: {
+            partDetail: {
+              include: {
+                cars: true,
               },
             },
+          },
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+        allocatedParts: {
+          select: {
+            id: true,
+            status: true,
+            partDetailsId: true,
+          },
+          orderBy: {
+            createdAt: "asc",
           },
         },
         images: {
@@ -54,7 +123,7 @@ export const listingsRouter = createTRPCRouter({
     });
 
     return {
-      items,
+      items: items.map((item) => withStock(item)),
     };
   }),
 
@@ -65,7 +134,7 @@ export const listingsRouter = createTRPCRouter({
         description: z.string().min(1),
         condition: z.string().min(1),
         price: z.number().positive(),
-        parts: z.array(z.string()).min(1),
+        components: z.array(componentSchema).min(1),
         images: z
           .array(
             z.object({
@@ -78,30 +147,57 @@ export const listingsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const listing = await ctx.db.listing.create({
-        data: {
-          title: input.title,
-          description: input.description,
-          condition: input.condition,
-          price: input.price,
-          active: true,
-          parts: {
-            connect: input.parts.map((partId) => ({ id: partId })),
+      const listing = await ctx.db.$transaction(async (tx) => {
+        const created = await tx.listing.create({
+          data: {
+            title: input.title,
+            description: input.description,
+            condition: input.condition,
+            price: input.price,
+            active: true,
+            components: {
+              createMany: {
+                data: input.components,
+              },
+            },
+            images: input.images
+              ? {
+                  createMany: {
+                    data: input.images.map((image) => ({
+                      url: image.url,
+                      order: image.order,
+                    })),
+                  },
+                }
+              : undefined,
           },
-          images: input.images
-            ? {
-                createMany: {
-                  data: input.images.map((image) => ({
-                    url: image.url,
-                    order: image.order,
-                  })),
-                },
-              }
-            : undefined,
-        },
+          include: {
+            components: true,
+            allocatedParts: true,
+            images: {
+              orderBy: {
+                order: "asc",
+              },
+            },
+          },
+        });
+
+        await allocateUnallocatedInventory({
+          tx,
+          listingId: created.id,
+          componentPartDetailIds: [
+            ...new Set(input.components.map((component) => component.partDetailId)),
+          ],
+        });
+
+        return created;
       });
 
-      return listing;
+      await syncEbayQuantityForListing(listing.id).catch((error) => {
+        console.error("eBay quantity sync failed after listing create", error);
+      });
+
+      return withStock(listing);
     }),
 
   update: adminProcedure
@@ -113,7 +209,7 @@ export const listingsRouter = createTRPCRouter({
           description: z.string().min(1),
           condition: z.string().min(1),
           price: z.number().positive(),
-          parts: z.array(z.string()).min(1),
+          components: z.array(componentSchema).min(1),
           images: z
             .array(
               z.object({
@@ -127,60 +223,87 @@ export const listingsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // First, fetch current parts to compare with new parts
-      const currentListing = await ctx.db.listing.findUnique({
-        where: { id: input.id },
-        include: {
-          parts: true,
-          images: true,
-        },
-      });
-
-      if (!currentListing) {
-        throw new Error("Listing not found");
-      }
-
-      // Get parts to disconnect and connect
-      const currentPartIds = currentListing.parts.map((part) => part.id);
-      const partsToDisconnect = currentPartIds.filter(
-        (id) => !input.data.parts.includes(id),
-      );
-      const partsToConnect = input.data.parts.filter(
-        (id) => !currentPartIds.includes(id),
-      );
-
-      // Update the listing with transactions to handle parts and images
       const updatedListing = await ctx.db.$transaction(async (tx) => {
-        // Disconnect parts that are not in the new list
-        if (partsToDisconnect.length > 0) {
-          await tx.listing.update({
-            where: { id: input.id },
-            data: {
-              parts: {
-                disconnect: partsToDisconnect.map((id) => ({ id })),
-              },
-            },
+        const current = await tx.listing.findUnique({
+          where: {
+            id: input.id,
+          },
+          include: {
+            components: true,
+          },
+        });
+        if (!current) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Listing not found",
           });
         }
 
-        // Connect new parts
-        if (partsToConnect.length > 0) {
-          await tx.listing.update({
-            where: { id: input.id },
-            data: {
-              parts: {
-                connect: partsToConnect.map((id) => ({ id })),
-              },
-            },
-          });
-        }
+        const nextComponentIds = new Set(
+          input.data.components.map((component) => component.partDetailId),
+        );
+        const previousComponentIds = new Set(
+          current.components.map((component) => component.partDetailId),
+        );
+        const removedComponentIds = [...previousComponentIds].filter(
+          (partDetailId) => !nextComponentIds.has(partDetailId),
+        );
 
-        // Delete all current images
-        await tx.image.deleteMany({
-          where: { listingId: input.id },
+        await tx.listingComponent.deleteMany({
+          where: {
+            listingId: input.id,
+            partDetailId: {
+              in: removedComponentIds,
+            },
+          },
         });
 
-        // Create new images if provided
+        for (const component of input.data.components) {
+          await tx.listingComponent.upsert({
+            where: {
+              listingId_partDetailId: {
+                listingId: input.id,
+                partDetailId: component.partDetailId,
+              },
+            },
+            update: {
+              quantity: component.quantity,
+            },
+            create: {
+              listingId: input.id,
+              partDetailId: component.partDetailId,
+              quantity: component.quantity,
+            },
+          });
+        }
+
+        if (removedComponentIds.length > 0) {
+          await tx.part.updateMany({
+            where: {
+              allocatedToListingId: input.id,
+              status: PartStatus.AVAILABLE,
+              partDetailsId: {
+                in: removedComponentIds,
+              },
+            },
+            data: {
+              allocatedToListingId: null,
+            },
+          });
+        }
+
+        await allocateUnallocatedInventory({
+          tx,
+          listingId: input.id,
+          componentPartDetailIds: [...nextComponentIds],
+        });
+
+        await tx.image.deleteMany({
+          where: {
+            listingId: input.id,
+          },
+        });
+
         if (input.data.images && input.data.images.length > 0) {
           await tx.image.createMany({
             data: input.data.images.map((image) => ({
@@ -191,19 +314,33 @@ export const listingsRouter = createTRPCRouter({
           });
         }
 
-        // Update the main listing data
         return tx.listing.update({
-          where: { id: input.id },
+          where: {
+            id: input.id,
+          },
           data: {
             title: input.data.title,
             description: input.data.description,
             condition: input.data.condition,
             price: input.data.price,
           },
+          include: {
+            components: true,
+            allocatedParts: true,
+            images: {
+              orderBy: {
+                order: "asc",
+              },
+            },
+          },
         });
       });
 
-      return updatedListing;
+      await syncEbayQuantityForListing(updatedListing.id).catch((error) => {
+        console.error("eBay quantity sync failed after listing update", error);
+      });
+
+      return withStock(updatedListing);
     }),
 
   delete: adminProcedure
@@ -213,17 +350,141 @@ export const listingsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // First, delete all images associated with the listing
-      await ctx.db.image.deleteMany({
-        where: { listingId: input.id },
+      const orderItemCount = await ctx.db.orderItem.count({
+        where: {
+          listingId: input.id,
+        },
       });
 
-      // Then delete the listing
-      const listing = await ctx.db.listing.delete({
-        where: { id: input.id },
-      });
+      if (orderItemCount > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot delete listing with order history. Retire it instead.",
+        });
+      }
 
+      const listing = await ctx.db.listing.update({
+        where: {
+          id: input.id,
+        },
+        data: {
+          active: false,
+        },
+      });
       return listing;
+    }),
+
+  getStock: publicProcedure
+    .input(
+      z.object({
+        listingId: z.string(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const listing = await ctx.db.listing.findUnique({
+        where: {
+          id: input.listingId,
+        },
+        select: {
+          components: {
+            select: {
+              partDetailId: true,
+              quantity: true,
+            },
+          },
+          allocatedParts: {
+            select: {
+              partDetailsId: true,
+              status: true,
+            },
+          },
+        },
+      });
+      if (!listing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Listing not found",
+        });
+      }
+
+      return {
+        stock: calculateStock({
+          components: listing.components,
+          inventoryParts: listing.allocatedParts,
+        }),
+      };
+    }),
+
+  allocateInventory: adminProcedure
+    .input(
+      z.object({
+        listingId: z.string(),
+        assignPartIds: z.array(z.string()).default([]),
+        unassignPartIds: z.array(z.string()).default([]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const listing = await ctx.db.listing.findUnique({
+        where: {
+          id: input.listingId,
+        },
+        select: {
+          id: true,
+        },
+      });
+      if (!listing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Listing not found",
+        });
+      }
+
+      const result = await ctx.db.$transaction(async (tx) => {
+        const assignResult =
+          input.assignPartIds.length > 0
+            ? await tx.part.updateMany({
+                where: {
+                  id: {
+                    in: input.assignPartIds,
+                  },
+                  status: PartStatus.AVAILABLE,
+                },
+                data: {
+                  allocatedToListingId: input.listingId,
+                },
+              })
+            : { count: 0 };
+
+        const unassignResult =
+          input.unassignPartIds.length > 0
+            ? await tx.part.updateMany({
+                where: {
+                  id: {
+                    in: input.unassignPartIds,
+                  },
+                  allocatedToListingId: input.listingId,
+                  status: PartStatus.AVAILABLE,
+                },
+                data: {
+                  allocatedToListingId: null,
+                },
+              })
+            : { count: 0 };
+
+        return {
+          assigned: assignResult.count,
+          unassigned: unassignResult.count,
+        };
+      });
+
+      await syncEbayQuantityForListing(input.listingId).catch((error) => {
+        console.error("eBay quantity sync failed after manual allocation", error);
+      });
+
+      return {
+        success: true,
+        ...result,
+      };
     }),
 
   getListingMetadata: publicProcedure
@@ -249,6 +510,7 @@ export const listingsRouter = createTRPCRouter({
       });
       return listing;
     }),
+
   getListing: publicProcedure
     .input(
       z.object({
@@ -256,9 +518,10 @@ export const listingsRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const listing = await ctx.db.listing.findUnique({
+      const listing = await ctx.db.listing.findFirst({
         where: {
           id: input.id,
+          active: true,
         },
         select: {
           id: true,
@@ -271,43 +534,42 @@ export const listingsRouter = createTRPCRouter({
               order: "asc",
             },
           },
-          parts: {
+          components: {
+            include: {
+              partDetail: {
+                include: {
+                  cars: true,
+                },
+              },
+            },
+          },
+          allocatedParts: {
             select: {
+              id: true,
+              status: true,
+              partDetailsId: true,
               donor: {
                 select: {
                   vin: true,
                   year: true,
-                  car: true,
                   mileage: true,
+                  car: true,
                 },
               },
-              partDetails: {
+              inventoryLocation: {
                 select: {
-                  length: true,
+                  id: true,
                   name: true,
-                  width: true,
-                  height: true,
-                  weight: true,
-                  partNo: true,
-                  alternatePartNumbers: true,
-                  cars: {
-                    select: {
-                      id: true,
-                      generation: true,
-                      series: true,
-                      model: true,
-                      body: true,
-                    },
-                  },
                 },
               },
-              quantity: true,
             },
           },
         },
       });
-      return listing;
+      if (!listing) return null;
+      return withStock(listing);
     }),
+
   getRelatedListings: publicProcedure
     .input(
       z.object({
@@ -324,6 +586,7 @@ export const listingsRouter = createTRPCRouter({
             orderBy: {
               order: "asc",
             },
+            take: 1,
           },
         },
         where: {
@@ -331,9 +594,9 @@ export const listingsRouter = createTRPCRouter({
             not: input.id,
           },
           active: true,
-          parts: {
+          components: {
             some: {
-              partDetails: {
+              partDetail: {
                 cars: {
                   some: {
                     generation: input.generation,
@@ -345,13 +608,17 @@ export const listingsRouter = createTRPCRouter({
           },
         },
       });
-      if (listings.length) return listings;
-      // just get 4 random listings
+      if (listings.length > 0) return listings;
 
-      const randomListings = await ctx.db.listing.findMany({
+      return ctx.db.listing.findMany({
         take: 4,
         include: {
-          images: true,
+          images: {
+            orderBy: {
+              order: "asc",
+            },
+            take: 1,
+          },
         },
         where: {
           id: {
@@ -360,8 +627,8 @@ export const listingsRouter = createTRPCRouter({
           active: true,
         },
       });
-      return randomListings;
     }),
+
   getListingsByIds: publicProcedure
     .input(
       z.object({
@@ -370,7 +637,7 @@ export const listingsRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       if (input.ids.length === 0) {
-        return []; // Return empty array if no IDs are provided
+        return [];
       }
 
       const listings = await ctx.db.listing.findMany({
@@ -378,6 +645,7 @@ export const listingsRouter = createTRPCRouter({
           id: {
             in: input.ids,
           },
+          active: true,
         },
         select: {
           id: true,
@@ -387,17 +655,39 @@ export const listingsRouter = createTRPCRouter({
             orderBy: {
               order: "asc",
             },
-            take: 1, // Only take the first image
+            take: 1,
             select: {
               url: true,
             },
           },
-          // Potentially add stock/quantity check here later if needed
+          components: {
+            select: {
+              partDetailId: true,
+              quantity: true,
+            },
+          },
+          allocatedParts: {
+            select: {
+              partDetailsId: true,
+              status: true,
+            },
+          },
         },
       });
-      return listings;
+
+      return listings.map((listing) => ({
+        id: listing.id,
+        title: listing.title,
+        price: listing.price,
+        images: listing.images,
+        stock: calculateStock({
+          components: listing.components,
+          inventoryParts: listing.allocatedParts,
+        }),
+      }));
     }),
-  bulkReduceQuantities: adminProcedure
+
+  markPartsSold: adminProcedure
     .input(
       z.object({
         items: z.array(
@@ -406,62 +696,165 @@ export const listingsRouter = createTRPCRouter({
             quantity: z.number().int().positive(),
           }),
         ),
+        orderName: z.string().default("eBay order"),
+        orderEmail: z.string().default("ebay-order@partedeuro.local"),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return await ctx.db.$transaction(async (tx) => {
+      const listingIds = input.items.map((item) => item.listingId);
+      const listings = await ctx.db.listing.findMany({
+        where: {
+          id: {
+            in: listingIds,
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+          price: true,
+          components: {
+            select: {
+              partDetailId: true,
+              quantity: true,
+            },
+          },
+          allocatedParts: {
+            select: {
+              partDetailsId: true,
+              status: true,
+            },
+          },
+        },
+      });
+      const listingById = new Map(listings.map((listing) => [listing.id, listing]));
+
+      for (const item of input.items) {
+        const listing = listingById.get(item.listingId);
+        if (!listing) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `Listing ${item.listingId} not found`,
+          });
+        }
+
+        const stock = calculateStock({
+          components: listing.components,
+          inventoryParts: listing.allocatedParts,
+        });
+        if (stock < item.quantity) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `${listing.title} is out of stock for requested quantity.`,
+          });
+        }
+      }
+
+      const result = await ctx.db.$transaction(async (tx) => {
+        const subtotal = input.items.reduce((acc, item) => {
+          const listing = listingById.get(item.listingId);
+          return acc + (listing?.price ?? 0) * item.quantity;
+        }, 0);
+
+        const order = await tx.order.create({
+          data: {
+            name: input.orderName,
+            email: input.orderEmail,
+            subtotal: Math.round(subtotal * 100),
+            status: "PAID",
+          },
+        });
+
         for (const item of input.items) {
-          const listing = await tx.listing.findUnique({
-            where: { id: item.listingId },
-            include: {
-              parts: {
-                orderBy: { createdAt: "asc" },
-              },
+          const listing = listingById.get(item.listingId);
+          if (!listing) continue;
+
+          const orderItem = await tx.orderItem.create({
+            data: {
+              orderId: order.id,
+              listingId: listing.id,
+              quantity: item.quantity,
+              unitPrice: listing.price,
             },
           });
 
-          if (!listing) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Listing not found",
-            });
-          }
-
-          const totalAvailable = listing.parts.reduce(
-            (sum, part) => sum + part.quantity,
-            0,
+          const requirements = calculateRequiredPartCounts(
+            listing.components.map((component) => ({
+              partDetailId: component.partDetailId,
+              quantity: component.quantity,
+            })),
+            item.quantity,
           );
-          if (totalAvailable < item.quantity) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: `Insufficient quantity for listing ${item.listingId}`,
+
+          const soldPartIds: string[] = [];
+          for (const requirement of requirements) {
+            const candidates = await tx.part.findMany({
+              where: {
+                allocatedToListingId: listing.id,
+                partDetailsId: requirement.partDetailId,
+                status: PartStatus.AVAILABLE,
+              },
+              orderBy: {
+                createdAt: "asc",
+              },
+              take: requirement.required,
+              select: {
+                id: true,
+              },
             });
+
+            if (candidates.length < requirement.required) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `${listing.title} is out of stock for requested quantity.`,
+              });
+            }
+
+            soldPartIds.push(...candidates.map((candidate) => candidate.id));
           }
 
-          let remaining = item.quantity;
-          for (const part of listing.parts) {
-            if (remaining <= 0) break;
-            const reduceBy = Math.min(part.quantity, remaining);
-            if (reduceBy > 0) {
-              await tx.listing.update({
-                where: { id: item.listingId },
-                data: {
-                  parts: {
-                    update: {
-                      where: { id: part.id },
-                      data: { quantity: part.quantity - reduceBy },
-                    },
-                  },
+          if (soldPartIds.length > 0) {
+            const updated = await tx.part.updateMany({
+              where: {
+                id: {
+                  in: soldPartIds,
                 },
+                status: PartStatus.AVAILABLE,
+              },
+              data: {
+                status: PartStatus.SOLD,
+                reservedAt: null,
+              },
+            });
+
+            if (updated.count !== soldPartIds.length) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: "Inventory changed while finalizing order. Please retry.",
               });
-              remaining -= reduceBy;
             }
+
+            await tx.orderItemPart.createMany({
+              data: soldPartIds.map((partId) => ({
+                orderItemId: orderItem.id,
+                partId,
+              })),
+              skipDuplicates: true,
+            });
           }
         }
 
-        return { success: true };
+        return {
+          success: true,
+          orderId: order.id,
+        };
       });
+
+      await syncEbayQuantitiesForListings(listingIds).catch((error) => {
+        console.error("eBay quantity sync failed after markPartsSold", error);
+      });
+      return result;
     }),
+
   searchListings: publicProcedure
     .input(
       z.object({
@@ -478,197 +871,178 @@ export const listingsRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      console.log(input);
       const searchTerms = prepareSearchTerms(input.search);
-      const searchConditions = searchTerms.map((term) => ({
-        OR: [
-          {
-            title: {
-              contains: term,
-              mode: "insensitive",
-            },
-          },
-          {
-            parts: {
-              some: {
-                partDetails: {
-                  partNo: {
-                    contains: term,
-                    mode: "insensitive",
-                  },
-                },
+      const searchConditions: Prisma.ListingWhereInput[] = searchTerms.map(
+        (term) => ({
+          OR: [
+            {
+              title: {
+                contains: term,
+                mode: "insensitive",
               },
             },
-          },
-          {
-            parts: {
-              some: {
-                partDetails: {
-                  alternatePartNumbers: {
-                    contains: term,
-                    mode: "insensitive",
-                  },
-                },
-              },
-            },
-          },
-        ],
-      }));
-      const orderBy: Record<string, "asc" | "desc"> = {};
-      orderBy[input.sortBy] = input.sortOrder as "asc" | "desc";
-      if (
-        !input.generation &&
-        !input.model &&
-        !input.series &&
-        !input.make &&
-        !input.category &&
-        !input.subcat
-      ) {
-        const queryWhere = {
-          active: true,
-          AND: searchTerms.length > 0 ? searchConditions : undefined,
-        } as Prisma.ListingWhereInput;
-        const listingsRequest = ctx.db.listing.findMany({
-          take: 20,
-          skip: input.page * 20,
-          include: {
-            images: {
-              orderBy: {
-                order: "asc",
-              },
-            },
-            parts: {
-              select: {
-                quantity: true,
-              },
-            },
-          },
-          where: queryWhere,
-          orderBy,
-        });
-        const countRequest = ctx.db.listing.count({ where: queryWhere });
-        const [listings, count] = await Promise.all([
-          listingsRequest,
-          countRequest,
-        ]);
-        const hasNextPage = count > input.page * 20 + 20;
-        const totalPages = Math.ceil(count / 20);
-        return { listings, count, hasNextPage, totalPages };
-      } else {
-        // Build the filter conditions based on what's provided
-        const filterConditions = [];
-
-        // Add search conditions if any
-        if (searchConditions.length > 0) {
-          filterConditions.push(...searchConditions);
-        }
-
-        // Add category/subcategory conditions if provided
-        if (input.category || input.subcat) {
-          filterConditions.push({
-            parts: {
-              some: {
-                partDetails: {
-                  partTypes: {
-                    some: {
-                      parent: input.category
-                        ? {
-                            name: {
-                              contains: input.category,
-                              mode: "insensitive",
-                            },
-                          }
-                        : undefined,
-                      name: input.subcat
-                        ? { contains: input.subcat, mode: "insensitive" }
-                        : undefined,
+            {
+              components: {
+                some: {
+                  partDetail: {
+                    partNo: {
+                      contains: term,
+                      mode: "insensitive",
                     },
                   },
                 },
               },
             },
-          });
-        }
-
-        // Add car-specific conditions if any provided
-        if (input.generation || input.model || input.series || input.make) {
-          filterConditions.push({
-            parts: {
-              some: {
-                partDetails: {
-                  cars: {
-                    some: {
-                      ...(input.generation
-                        ? {
-                            generation: {
-                              contains: input.generation,
-                              mode: "insensitive",
-                            },
-                          }
-                        : {}),
-                      ...(input.model
-                        ? {
-                            model: {
-                              contains: input.model,
-                              mode: "insensitive",
-                            },
-                          }
-                        : {}),
-                      ...(input.series
-                        ? {
-                            series: {
-                              contains: input.series,
-                              mode: "insensitive",
-                            },
-                          }
-                        : {}),
-                      ...(input.make
-                        ? {
-                            make: { contains: input.make, mode: "insensitive" },
-                          }
-                        : {}),
+            {
+              components: {
+                some: {
+                  partDetail: {
+                    alternatePartNumbers: {
+                      contains: term,
+                      mode: "insensitive",
                     },
                   },
                 },
               },
             },
-          });
-        }
+          ],
+        }),
+      );
 
-        const queryWhere = {
-          active: true,
-          AND: filterConditions,
-        } as Prisma.ListingWhereInput;
-
-        const listingsRequest = ctx.db.listing.findMany({
-          take: 20,
-          skip: input.page * 20,
-          include: {
-            images: {
-              take: 2,
-              orderBy: {
-                order: "asc",
-              },
-            },
-            parts: {
-              select: {
-                quantity: true,
-              },
-            },
-          },
-          where: queryWhere,
-          orderBy,
-        });
-        const countRequest = ctx.db.listing.count({ where: queryWhere });
-        const [listings, count] = await Promise.all([
-          listingsRequest,
-          countRequest,
-        ]);
-        const hasNextPage = count > input.page * 20 + 20;
-        const totalPages = Math.ceil(count / 20);
-        return { listings, count, hasNextPage, totalPages };
+      const filterConditions: Prisma.ListingWhereInput[] = [];
+      if (searchConditions.length > 0) {
+        filterConditions.push(...searchConditions);
       }
+
+      if (input.category || input.subcat) {
+        filterConditions.push({
+          components: {
+            some: {
+              partDetail: {
+                partTypes: {
+                  some: {
+                    parent: input.category
+                      ? {
+                          name: {
+                            contains: input.category,
+                            mode: "insensitive",
+                          },
+                        }
+                      : undefined,
+                    name: input.subcat
+                      ? { contains: input.subcat, mode: "insensitive" }
+                      : undefined,
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      if (input.generation || input.model || input.series || input.make) {
+        filterConditions.push({
+          components: {
+            some: {
+              partDetail: {
+                cars: {
+                  some: {
+                    ...(input.generation
+                      ? {
+                          generation: {
+                            contains: input.generation,
+                            mode: "insensitive",
+                          },
+                        }
+                      : {}),
+                    ...(input.model
+                      ? {
+                          model: {
+                            contains: input.model,
+                            mode: "insensitive",
+                          },
+                        }
+                      : {}),
+                    ...(input.series
+                      ? {
+                          series: {
+                            contains: input.series,
+                            mode: "insensitive",
+                          },
+                        }
+                      : {}),
+                    ...(input.make
+                      ? {
+                          make: {
+                            contains: input.make,
+                            mode: "insensitive",
+                          },
+                        }
+                      : {}),
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      const queryWhere: Prisma.ListingWhereInput = {
+        active: true,
+        AND: filterConditions.length > 0 ? filterConditions : undefined,
+      };
+      const safeSortField =
+        input.sortBy === "price" || input.sortBy === "createdAt"
+          ? input.sortBy
+          : "createdAt";
+      const orderBy: Record<string, "asc" | "desc"> = {};
+      orderBy[safeSortField] = input.sortOrder === "asc" ? "asc" : "desc";
+
+      const listingsRequest = ctx.db.listing.findMany({
+        take: 20,
+        skip: input.page * 20,
+        include: {
+          images: {
+            take: 2,
+            orderBy: {
+              order: "asc",
+            },
+          },
+          components: {
+            select: {
+              partDetailId: true,
+              quantity: true,
+            },
+          },
+          allocatedParts: {
+            select: {
+              partDetailsId: true,
+              status: true,
+            },
+          },
+        },
+        where: queryWhere,
+        orderBy,
+      });
+      const countRequest = ctx.db.listing.count({ where: queryWhere });
+      const [listings, count] = await Promise.all([listingsRequest, countRequest]);
+      const hasNextPage = count > input.page * 20 + 20;
+      const totalPages = Math.ceil(count / 20);
+
+      return {
+        listings: listings.map((listing) => ({
+          ...listing,
+          stock: calculateStock({
+            components: listing.components,
+            inventoryParts: listing.allocatedParts,
+          }),
+        })),
+        count,
+        hasNextPage,
+        totalPages,
+      };
     }),
+
   globalSearch: publicProcedure
     .input(
       z.object({
@@ -688,18 +1062,18 @@ export const listingsRouter = createTRPCRouter({
           { title: { contains: term, mode: "insensitive" as const } },
           { description: { contains: term, mode: "insensitive" as const } },
           {
-            parts: {
+            components: {
               some: {
-                partDetails: {
+                partDetail: {
                   partNo: { contains: term, mode: "insensitive" as const },
                 },
               },
             },
           },
           {
-            parts: {
+            components: {
               some: {
-                partDetails: {
+                partDetail: {
                   alternatePartNumbers: {
                     contains: term,
                     mode: "insensitive" as const,
@@ -739,12 +1113,12 @@ export const listingsRouter = createTRPCRouter({
 
       return listings;
     }),
+
   getSitemapListings: publicProcedure.query(async ({ ctx }) => {
-    const listings = await ctx.db.listing.findMany({
+    return ctx.db.listing.findMany({
       where: {
         active: true,
       },
     });
-    return listings;
   }),
 });

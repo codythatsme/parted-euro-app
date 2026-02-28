@@ -1,6 +1,6 @@
 "use client";
 
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal, Pencil, Trash } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
@@ -15,7 +15,7 @@ export type Category = {
   id: string;
   name: string;
   parentId: string | null;
-  parentName?: string;
+  parentName: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -42,8 +42,8 @@ export function getCategoryColumns({
         <DataTableColumnHeader column={column} title="Parent Category" />
       ),
       cell: ({ row }) => {
-        const parentName = row.getValue("parentName") as string | undefined;
-        return <div>{parentName || "None"}</div>;
+        const parentName = row.getValue<string | null>("parentName");
+        return <div>{parentName ?? "None"}</div>;
       },
     },
     {
@@ -52,7 +52,7 @@ export function getCategoryColumns({
         <DataTableColumnHeader column={column} title="Created At" />
       ),
       cell: ({ row }) => {
-        const createdAt = row.getValue("createdAt") as Date;
+        const createdAt = row.getValue<Date>("createdAt");
         return <div>{createdAt.toLocaleDateString()}</div>;
       },
     },

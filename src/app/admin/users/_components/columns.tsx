@@ -1,10 +1,10 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
 import { api } from "~/trpc/react";
 import { toast } from "sonner";
+import { Shield } from "lucide-react";
 import { DataTableColumnHeader } from "~/components/data-table/data-table-column-header";
 
 export type User = {
@@ -73,6 +73,15 @@ export function getUserColumns(): ColumnDef<User>[] {
     {
       accessorKey: "isAdmin",
       header: "Admin Status",
+      meta: {
+        displayName: "Admin",
+        icon: Shield,
+        type: "option",
+        transformOptionFn: (val) => ({
+          label: val ? "Yes" : "No",
+          value: val ? "true" : "false",
+        }),
+      },
       cell: ({ row }) => {
         const user = row.original;
         const isAdmin = row.getValue<boolean>("isAdmin");

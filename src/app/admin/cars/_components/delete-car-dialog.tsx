@@ -34,8 +34,8 @@ export function DeleteCarDialog({
       toast.success("Car deleted successfully");
       onOpenChange(false);
       // Invalidate the car queries to trigger a refetch
-      utils.car.getAll.invalidate();
-      utils.car.getAllSeries.invalidate();
+      void utils.car.getAll.invalidate();
+      void utils.car.getAllSeries.invalidate();
       router.refresh();
     },
     onError: (error) => {

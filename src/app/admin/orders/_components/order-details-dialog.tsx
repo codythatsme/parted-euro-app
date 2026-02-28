@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +17,7 @@ import {
 } from "~/components/ui/table";
 import { Badge } from "~/components/ui/badge";
 import { type AdminOrdersItem } from "~/trpc/shared";
+import { PickSheetButton } from "./pick-sheet-pdf";
 
 // Format currency
 const formatter = new Intl.NumberFormat("en-AU", {
@@ -50,11 +50,11 @@ const getStatusBadge = (status: string) => {
   }
 };
 
-interface OrderDetailsDialogProps {
+type OrderDetailsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   order: AdminOrdersItem;
-}
+};
 
 export function OrderDetailsDialog({
   open,
@@ -71,7 +71,7 @@ export function OrderDetailsDialog({
   });
 
   const subtotal = order.subtotal;
-  const shipping = order.shipping * 100 || 0;
+  const shipping = (order.shipping ?? 0) * 100;
   const total = subtotal + shipping;
 
   return (
@@ -85,7 +85,10 @@ export function OrderDetailsDialog({
                 {order.id}
               </span>
             </div>
-            <Badge variant={getStatusBadge(order.status)}>{order.status}</Badge>
+            <div className="flex items-center gap-2">
+              <PickSheetButton order={order} />
+              <Badge variant={getStatusBadge(order.status)}>{order.status}</Badge>
+            </div>
           </DialogTitle>
           <DialogDescription>Order placed on {formattedDate}</DialogDescription>
         </DialogHeader>
@@ -107,7 +110,7 @@ export function OrderDetailsDialog({
             <div className="rounded-md border p-3">
               <p className="text-sm">
                 <span className="font-medium">Method:</span>{" "}
-                {order.shippingMethod || "Not specified"}
+                {order.shippingMethod ?? "Not specified"}
               </p>
               {order.shippingAddress && (
                 <p className="text-sm">
@@ -139,43 +142,59 @@ export function OrderDetailsDialog({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {order.orderItems.map((item) => (
+                {order.orderItems.map((item) => {
+                  const title = item.listing?.title ?? item.description ?? "Direct sale";
+                  const imageUrl = item.listing?.images?.[0]?.url;
+                  const price = item.unitPrice;
+                  return (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-3">
-                        {item.listing.images?.[0] && (
+                        {imageUrl && (
                           <img
-                            src={item.listing.images[0].url}
-                            alt={item.listing.title}
+                            src={imageUrl}
+                            alt={title}
                             className="h-12 w-12 rounded-md object-cover"
                           />
                         )}
                         <div>
-                          {item.listing.title}
+                          {title}
                           <div className="max-w-[300px] truncate text-xs text-muted-foreground">
                             Part #:{" "}
-                            {[
-                              ...new Set(
-                                item.listing.parts.map(
-                                  (p) => p.partDetails.partNo,
-                                ),
-                              ),
-                            ].join(",")}
+                            {item.allocatedParts
+                              .map((allocated) => allocated.part.partDetails.partNo)
+                              .join(", ")}
+                          </div>
+                          <div className="max-w-[300px] truncate text-xs text-muted-foreground">
+                            Donor VIN:{" "}
+                            {item.allocatedParts
+                              .map((allocated) => allocated.part.donor?.vin ?? "N/A")
+                              .join(", ")}
+                          </div>
+                          <div className="max-w-[300px] truncate text-xs text-muted-foreground">
+                            Location:{" "}
+                            {item.allocatedParts
+                              .map(
+                                (allocated) =>
+                                  allocated.part.inventoryLocation?.name ?? "N/A",
+                              )
+                              .join(", ")}
                           </div>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatPrice(item.listing.price)}
+                      {formatPrice(price)}
                     </TableCell>
                     <TableCell className="text-center">
                       {item.quantity}
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatPrice(item.listing.price * item.quantity)}
+                      {formatPrice(price * item.quantity)}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
 
                 {/* Subtotal row */}
                 <TableRow>

@@ -63,13 +63,17 @@ export default async function OrderConfirmationPage({
                   </p>
                 ) : (
                   <div className="space-y-4">
-                    {order.orderItems.map((item) => (
+                    {order.orderItems.map((item) => {
+                      const title = item.listing?.title ?? item.description ?? "Direct sale";
+                      const imageUrl = item.listing?.images?.[0]?.url;
+                      const price = item.unitPrice;
+                      return (
                       <div key={item.id} className="flex space-x-4">
                         <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-secondary">
-                          {item.listing.images?.[0] ? (
+                          {imageUrl ? (
                             <Image
-                              src={item.listing.images[0].url}
-                              alt={item.listing.title}
+                              src={imageUrl}
+                              alt={title}
                               fill
                               className="object-cover"
                             />
@@ -80,20 +84,19 @@ export default async function OrderConfirmationPage({
                           )}
                         </div>
                         <div className="flex flex-1 flex-col">
-                          <h4 className="font-medium">{item.listing.title}</h4>
+                          <h4 className="font-medium">{title}</h4>
                           <div className="mt-1 flex justify-between">
                             <span className="text-sm text-muted-foreground">
                               Qty: {item.quantity}
                             </span>
                             <span className="font-medium">
-                              {formatCurrency(
-                                item.listing.price * item.quantity,
-                              )}
+                              {formatCurrency(price * item.quantity)}
                             </span>
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

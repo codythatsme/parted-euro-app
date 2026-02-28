@@ -34,6 +34,7 @@ export function DeletePartDialog({
       toast.success("Part deleted successfully");
       onOpenChange(false);
       void utils.part.getAll.invalidate();
+      void utils.inventory.getAll.invalidate();
     },
     onError: (error) => {
       toast.error(`Failed to delete part: ${error.message}`);
@@ -54,7 +55,7 @@ export function DeletePartDialog({
         <DialogHeader>
           <DialogTitle>Delete Part</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete the part "{part.name}" (Part No:{" "}
+            Are you sure you want to delete the part &quot;{part.name}&quot; (Part No:{" "}
             {part.partNo})? This action cannot be undone.
           </DialogDescription>
         </DialogHeader>

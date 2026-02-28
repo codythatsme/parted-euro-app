@@ -1,4 +1,5 @@
 'use client'
+'use no memo'
 
 import { Button } from '~/components/ui/button'
 import { Calendar } from '~/components/ui/calendar'
@@ -50,7 +51,6 @@ import { ArrowRight, Filter } from 'lucide-react'
 import { X } from 'lucide-react'
 import { Ellipsis } from 'lucide-react'
 import {
-  cloneElement,
   isValidElement,
   useEffect,
   useMemo,
@@ -59,7 +59,20 @@ import {
 } from 'react'
 import type { DateRange } from 'react-day-picker'
 
-export function DataTableFilter<TData, TValue>({
+/** Renders a ColumnOption icon, handling both ReactElement and ElementType. */
+function OptionIcon({
+  icon,
+  className,
+}: { icon: NonNullable<ColumnOption['icon']>; className?: string }) {
+  if (typeof icon === 'function') {
+    const Icon = icon
+    return <Icon className={className} />
+  }
+  // ReactElement or string ElementType
+  return isValidElement(icon) ? icon : null
+}
+
+export function DataTableFilter<TData>({
   table,
 }: { table: Table<TData> }) {
   const isMobile = useIsMobile()
@@ -275,13 +288,16 @@ export function FilterableColumn<TData>({
   table: Table<TData>
   setProperty: (value: string) => void
 }) {
-  const Icon = column.columnDef.meta?.icon!
+  const meta = column.columnDef.meta
+  if (!meta) return null
+  const Icon = meta.icon
+
   return (
     <CommandItem onSelect={() => setProperty(column.id)} className="group">
       <div className="flex w-full items-center justify-between">
         <div className="inline-flex items-center gap-1.5">
-          {<Icon strokeWidth={2.25} className="size-4" />}
-          <span>{column.columnDef.meta?.displayName}</span>
+          <Icon strokeWidth={2.25} className="size-4" />
+          <span>{meta.displayName}</span>
         </div>
         <ArrowRight className="size-4 opacity-0 group-aria-selected:opacity-100" />
       </div>
@@ -417,10 +433,10 @@ function renderFilter<TData, T extends ColumnDataType>(
       <Separator orientation="vertical" />
       <Button
         variant="ghost"
-        className="rounded-none rounded-r-2xl text-xs w-7 h-full"
+        className="rounded-none rounded-r-2xl text-xs w-7 h-full p-0"
         onClick={() => table.getColumn(filter.id)?.setFilterValue(undefined)}
       >
-        <X className="size-4 -translate-x-0.5" />
+        <X className="size-4" />
       </Button>
     </div>
   )
@@ -507,9 +523,10 @@ export function FilterOperatorController<TData>({
   column,
   closeController,
 }: FilterOperatorControllerProps<TData>) {
-  const { type } = column.columnDef.meta!
+  const meta = column.columnDef.meta
+  if (!meta) return null
 
-  switch (type) {
+  switch (meta.type) {
     case 'option':
       return (
         <FilterOperatorOptionController
@@ -670,14 +687,11 @@ function FilterOperatorNumberController<TData>({
   column,
   closeController,
 }: FilterOperatorControllerProps<TData>) {
-  const filter = column.getFilterValue() as FilterModel<'number', TData>
-
-  // Show all related operators
+  type NumberFilterOperator = keyof typeof numberFilterDetails
   const relatedFilters = Object.values(numberFilterDetails)
-  const relatedFilterOperators = relatedFilters.map((r) => r.value)
 
-  const changeOperator = (value: (typeof relatedFilterOperators)[number]) => {
-    column.setFilterValue((old: typeof filter) => {
+  const changeOperator = (value: NumberFilterOperator) => {
+    column.setFilterValue((old: FilterModel<'number', TData>) => {
       // Clear out the second value when switching to single-input operators
       const target = numberFilterDetails[value].target
 
@@ -866,16 +880,12 @@ export function FilterValueOptionDisplay<TData, TValue>({
   // 1) up to 3 icons of the selected options
   // 2) the number of selected options
   if (selected.length === 1) {
-    const { label, icon: Icon } = selected[0]
-    const hasIcon = !!Icon
+    const first = selected[0]
+    if (!first) return null
+    const { label, icon } = first
     return (
       <span className="inline-flex items-center gap-1">
-        {hasIcon &&
-          (isValidElement(Icon) ? (
-            Icon
-          ) : (
-            <Icon className="size-4 text-primary" />
-          ))}
+        {icon && <OptionIcon icon={icon} className="size-4 text-primary" />}
         <span>{label}</span>
       </span>
     )
@@ -889,12 +899,8 @@ export function FilterValueOptionDisplay<TData, TValue>({
     <div className="inline-flex items-center gap-0.5">
       {hasOptionIcons &&
         take(selected, 3).map(({ value, icon }) => {
-          const Icon = icon!
-          return isValidElement(Icon) ? (
-            Icon
-          ) : (
-            <Icon key={value} className="size-4" />
-          )
+          if (!icon) return null
+          return <OptionIcon key={value} icon={icon} className="size-4" />
         })}
       <span className={cn(hasOptionIcons && 'ml-1.5')}>
         {selected.length} {pluralName}
@@ -944,19 +950,15 @@ export function FilterValueMultiOptionDisplay<TData, TValue>({
   }
 
   const filter = column.getFilterValue() as FilterModel<'multiOption', TData>
-  const selected = options.filter((o) => filter?.values[0].includes(o.value))
+  const selected = options.filter((o) => filter?.values[0]?.includes(o.value))
 
   if (selected.length === 1) {
-    const { label, icon: Icon } = selected[0]
-    const hasIcon = !!Icon
+    const first = selected[0]
+    if (!first) return null
+    const { label, icon } = first
     return (
       <span className="inline-flex items-center gap-1.5">
-        {hasIcon &&
-          (isValidElement(Icon) ? (
-            Icon
-          ) : (
-            <Icon className="size-4 text-primary" />
-          ))}
+        {icon && <OptionIcon icon={icon} className="size-4 text-primary" />}
 
         <span>{label}</span>
       </span>
@@ -972,12 +974,8 @@ export function FilterValueMultiOptionDisplay<TData, TValue>({
       {hasOptionIcons && (
         <div key="icons" className="inline-flex items-center gap-0.5">
           {take(selected, 3).map(({ value, icon }) => {
-            const Icon = icon!
-            return isValidElement(Icon) ? (
-              cloneElement(Icon, { key: value })
-            ) : (
-              <Icon key={value} className="size-4" />
-            )
+            if (!icon) return null
+            return <OptionIcon key={value} icon={icon} className="size-4" />
           })}
         </div>
       )}
@@ -1012,15 +1010,19 @@ export function FilterValueDateDisplay<TData, TValue>({
 
   if (!filter) return null
   if (filter.values.length === 0) return <Ellipsis className="size-4" />
+
+  const firstDate = filter.values[0]
+  if (!firstDate) return <Ellipsis className="size-4" />
+
   if (filter.values.length === 1) {
-    const value = filter.values[0]
-
-    const formattedDateStr = format(value, 'MMM d, yyyy')
-
+    const formattedDateStr = format(firstDate, 'MMM d, yyyy')
     return <span>{formattedDateStr}</span>
   }
 
-  const formattedRangeStr = formatDateRange(filter.values[0], filter.values[1])
+  const secondDate = filter.values[1]
+  if (!secondDate) return <Ellipsis className="size-4" />
+
+  const formattedRangeStr = formatDateRange(firstDate, secondDate)
 
   return <span>{formattedRangeStr}</span>
 }
@@ -1033,12 +1035,11 @@ export function FilterValueTextDisplay<TData, TValue>({
     : undefined
 
   if (!filter) return null
-  if (filter.values.length === 0 || filter.values[0].trim() === '')
+  const firstVal = filter.values[0]
+  if (!firstVal || firstVal.trim() === '')
     return <Ellipsis className="size-4" />
 
-  const value = filter.values[0]
-
-  return <span>{value}</span>
+  return <span>{firstVal}</span>
 }
 
 export function FilterValueNumberDisplay<TData, TValue>({
@@ -1058,12 +1059,14 @@ export function FilterValueNumberDisplay<TData, TValue>({
     filter.operator === 'is between' ||
     filter.operator === 'is not between'
   ) {
-    const minValue = filter.values[0]
+    const minValue = filter.values[0] ?? 0
+    const rawMax = filter.values[1]
     const maxValue =
-      filter.values[1] === Number.POSITIVE_INFINITY ||
-      filter.values[1] >= cappedMax
+      rawMax === undefined ||
+      rawMax === Number.POSITIVE_INFINITY ||
+      rawMax >= cappedMax
         ? `${cappedMax}+`
-        : filter.values[1]
+        : rawMax
 
     return (
       <span className="tabular-nums tracking-tight">
@@ -1263,12 +1266,7 @@ export function FilterValueOptionController<TData, TValue>({
                     checked={checked}
                     className="opacity-0 group-hover:opacity-100 data-[state=checked]:opacity-100"
                   />
-                  {v.icon &&
-                    (isValidElement(v.icon) ? (
-                      v.icon
-                    ) : (
-                      <v.icon className="size-4 text-primary" />
-                    ))}
+                  {v.icon && <OptionIcon icon={v.icon} className="size-4 text-primary" />}
                   <span>
                     {v.label}
                     <sup
@@ -1428,12 +1426,7 @@ export function FilterValueMultiOptionController<
                     checked={checked}
                     className="opacity-0 group-hover:opacity-100 data-[state=checked]:opacity-100"
                   />
-                  {v.icon &&
-                    (isValidElement(v.icon) ? (
-                      v.icon
-                    ) : (
-                      <v.icon className="size-4 text-primary" />
-                    ))}
+                  {v.icon && <OptionIcon icon={v.icon} className="size-4 text-primary" />}
                   <span>
                     {v.label}
                     <sup
@@ -1470,7 +1463,7 @@ export function FilterValueDateController<TData, TValue>({
   function changeDateRange(value: DateRange | undefined) {
     const start = value?.from
     const end =
-      start && value && value.to && !isEqual(start, value.to)
+      start && value?.to && !isEqual(start, value.to)
         ? value.to
         : undefined
 
@@ -1561,7 +1554,6 @@ export function FilterValueTextController<TData, TValue>({
 }
 
 export function FilterValueNumberController<TData, TValue>({
-  table,
   column,
   columnMeta,
 }: ProperFilterValueMenuProps<TData, TValue>) {
@@ -1600,16 +1592,18 @@ export function FilterValueNumberController<TData, TValue>({
       }
 
       const operator = numberFilterDetails[old.operator]
+      const first = sortedValues[0] ?? 0
+      const second = sortedValues[1] ?? 0
       let newValues: number[]
 
       if (operator.target === 'single') {
-        newValues = [sortedValues[0]]
+        newValues = [first]
       } else {
         newValues = [
-          sortedValues[0] >= cappedMax ? cappedMax : sortedValues[0],
-          sortedValues[1] >= cappedMax
+          first >= cappedMax ? cappedMax : first,
+          second >= cappedMax
             ? Number.POSITIVE_INFINITY
-            : sortedValues[1],
+            : second,
         ]
       }
 
@@ -1655,9 +1649,9 @@ export function FilterValueNumberController<TData, TValue>({
     })
 
     if (type === 'single') {
-      setInputValues([inputValues[0]])
+      setInputValues([inputValues[0] ?? '0'])
     } else {
-      const maxValue = inputValues[0] || cappedMax.toString()
+      const maxValue = inputValues[0] ?? cappedMax.toString()
       setInputValues(['0', maxValue])
     }
   }
@@ -1696,7 +1690,7 @@ export function FilterValueNumberController<TData, TValue>({
                 <Slider
                   value={[Number(inputValues[0])]}
                   onValueChange={(value) => {
-                    handleInputChange(0, value[0].toString())
+                    handleInputChange(0, (value[0] ?? 0).toString())
                   }}
                   min={datasetMin}
                   max={cappedMax}

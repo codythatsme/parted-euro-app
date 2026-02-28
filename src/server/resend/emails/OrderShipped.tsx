@@ -59,26 +59,31 @@ export const OrderShippedEmail = ({ order }: OrderShippedEmailprops) => (
         </Text>
         <Section>
           {order!.orderItems.map((item, index) => {
+            const title = item.listing?.title ?? item.description ?? "Direct sale";
+            const price = item.unitPrice;
+            const imageUrl = item.listing?.images[0]?.url;
             if (index === 0) {
               return (
                 <Row key={item.id}>
                   <Column>
                     <Text style={{ ...text }}></Text>
-                    <Img
-                      src={item.listing.images[0]?.url}
-                      width="60"
-                      height="60"
-                      alt="Product Image"
-                    />
+                    {imageUrl && (
+                      <Img
+                        src={imageUrl}
+                        width="60"
+                        height="60"
+                        alt="Product Image"
+                      />
+                    )}
                   </Column>
                   <Column>
                     <Text style={{ ...text, fontWeight: "bold" }}>Item</Text>
-                    <Text style={{ ...text }}>{item.listing.title}</Text>
+                    <Text style={{ ...text }}>{title}</Text>
                   </Column>
                   <Column>
                     <Text style={{ ...text, fontWeight: "bold" }}>Price</Text>
                     <Text style={{ ...text }}>
-                      {formatter.format(item.listing.price)}
+                      {formatter.format(price)}
                     </Text>
                   </Column>
                   <Column>
@@ -93,19 +98,21 @@ export const OrderShippedEmail = ({ order }: OrderShippedEmailprops) => (
             return (
               <Row key={item.id}>
                 <Column>
-                  <Img
-                    src={item.listing.images[0]?.url}
-                    width="60"
-                    height="60"
-                    alt="Product Image"
-                  />
+                  {imageUrl && (
+                    <Img
+                      src={imageUrl}
+                      width="60"
+                      height="60"
+                      alt="Product Image"
+                    />
+                  )}
                 </Column>
                 <Column>
-                  <Text style={{ ...text }}>{item.listing.title}</Text>
+                  <Text style={{ ...text }}>{title}</Text>
                 </Column>
                 <Column>
                   <Text style={{ ...text }}>
-                    {formatter.format(item.listing.price)}
+                    {formatter.format(price)}
                   </Text>
                 </Column>
                 <Column>
@@ -145,7 +152,7 @@ const container = {
   margin: "0 auto",
 };
 
-const h1 = {
+const _h1 = {
   color: "#333",
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
@@ -155,7 +162,7 @@ const h1 = {
   padding: "0",
 };
 
-const link = {
+const _link = {
   color: "#2754C5",
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
@@ -179,7 +186,7 @@ const span = {
   display: "inline",
 };
 
-const footer = {
+const _footer = {
   color: "#898989",
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
@@ -189,7 +196,7 @@ const footer = {
   marginBottom: "24px",
 };
 
-const code = {
+const _code = {
   display: "inline-block",
   padding: "16px 4.5%",
   width: "90.5%",

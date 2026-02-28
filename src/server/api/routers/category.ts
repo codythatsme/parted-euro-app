@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type PrismaClient, type Prisma } from "@prisma/client";
+import { type PrismaClient } from "@prisma/client";
 import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
 import { TRPCError } from "@trpc/server";
 
@@ -44,7 +44,7 @@ export const categoryRouter = createTRPCRouter({
     // Map the results to include the parent name
     const mappedCategories = categories.map((category) => ({
       ...category,
-      parentName: category.parent?.name || null,
+      parentName: category.parent?.name ?? null,
     }));
 
     return {

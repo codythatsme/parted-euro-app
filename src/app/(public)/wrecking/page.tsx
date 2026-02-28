@@ -5,13 +5,11 @@ import { api } from "~/trpc/react";
 import { parseAsInteger, useQueryState } from "nuqs";
 import { useDebounce } from "use-debounce";
 import {
-  ChevronDown,
   Search,
   Filter,
   X,
   ArrowUpDown,
   Car,
-  Loader2,
   Calendar,
   Gauge,
 } from "lucide-react";
@@ -74,7 +72,6 @@ type Donor = {
   mileage: number;
   createdAt: Date;
   updatedAt: Date;
-  imageUrl: string | null;
   hideFromSearch: boolean;
   dateInStock: Date | null;
   images: DonorImage[];
@@ -502,12 +499,6 @@ export default function WreckingPage() {
                       {donor.images?.[0] ? (
                         <img
                           src={donor.images[0].url}
-                          alt={`${donor.car.make} ${donor.car.model}`}
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                      ) : donor.imageUrl ? (
-                        <img
-                          src={donor.imageUrl}
                           alt={`${donor.car.make} ${donor.car.model}`}
                           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         />

@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "../trpc";
+import { TRPCError } from "@trpc/server";
+import { calculateStock } from "~/server/lib/stock";
 
 // Helper to read device id from request headers
 function getDeviceIdFromHeaders(headers: Headers): string {
@@ -76,6 +78,33 @@ export const cartRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const deviceId = getDeviceIdFromHeaders(ctx.headers);
 
+      const listing = await ctx.db.listing.findFirst({
+        where: {
+          id: input.listingId,
+          active: true,
+        },
+        select: {
+          components: {
+            select: {
+              partDetailId: true,
+              quantity: true,
+            },
+          },
+          allocatedParts: {
+            select: {
+              partDetailsId: true,
+              status: true,
+            },
+          },
+        },
+      });
+      if (!listing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Listing not found",
+        });
+      }
+
       await ctx.db.cart.upsert({
         where: { deviceId },
         create: { deviceId },
@@ -89,6 +118,17 @@ export const cartRouter = createTRPCRouter({
         },
         select: { id: true, quantity: true },
       });
+      const nextQuantity = (existing?.quantity ?? 0) + input.quantity;
+      const stock = calculateStock({
+        components: listing.components,
+        inventoryParts: listing.allocatedParts,
+      });
+      if (nextQuantity > stock) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Not enough stock for requested quantity.",
+        });
+      }
 
       if (existing) {
         await ctx.db.cartItem.update({
@@ -164,9 +204,10 @@ export const cartRouter = createTRPCRouter({
       const listings = await ctx.db.listing.findMany({
         where: { id: { in: input.ids } },
         select: {
-          parts: {
+          components: {
             select: {
-              partDetails: {
+              quantity: true,
+              partDetail: {
                 select: {
                   length: true,
                   width: true,
@@ -179,7 +220,9 @@ export const cartRouter = createTRPCRouter({
         },
       });
       const cartParts = listings.flatMap((listing) =>
-        listing.parts.map((part) => part.partDetails),
+        listing.components.flatMap((component) =>
+          Array.from({ length: component.quantity }, () => component.partDetail),
+        ),
       );
       const cartWeight = cartParts.reduce((acc, cur) => acc + cur.weight, 0);
       const largestPart = cartParts.reduce(

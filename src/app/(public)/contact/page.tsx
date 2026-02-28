@@ -1,13 +1,9 @@
-"use client";
-
-import { useState } from "react";
 import { MapPin, Phone, Mail } from "lucide-react";
 import { Separator } from "~/components/ui/separator";
 import {
   Card,
   CardHeader,
   CardTitle,
-  CardDescription,
   CardContent,
 } from "~/components/ui/card";
 
