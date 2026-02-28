@@ -101,6 +101,10 @@ export const inventoryRouter = createTRPCRouter({
           variant: true,
           allocatedToListingId: true,
           partDetails: { select: { name: true, partNo: true } },
+          images: {
+            select: { id: true, url: true, order: true },
+            orderBy: { order: "asc" },
+          },
         },
         orderBy: { partDetails: { name: "asc" } },
       });

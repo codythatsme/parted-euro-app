@@ -156,6 +156,18 @@ export function ListingForm({
     [defaultValues],
   );
 
+  const allocatedImages = useMemo(() => {
+    if (allocationIds.length === 0) return [];
+    return inventoryItems
+      .filter((item) => allocationIds.includes(item.id))
+      .flatMap((item) =>
+        item.images.map((img) => ({
+          ...img,
+          partLabel: `${item.partDetails.name}${item.variant ? ` - ${item.variant}` : ""}`,
+        })),
+      );
+  }, [allocationIds, inventoryItems]);
+
   const isSubmitting =
     createMutation.isPending ||
     updateMutation.isPending ||
@@ -395,6 +407,30 @@ export function ListingForm({
                 </div>
               </div>
             </div>
+
+            {allocatedImages.length > 0 && (
+              <div className="rounded-md border p-4">
+                <h3 className="mb-2 text-sm font-semibold">
+                  Photos ({allocatedImages.length})
+                </h3>
+                <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                  {allocatedImages.map((image) => (
+                    <div key={image.id} className="group relative">
+                      <div className="aspect-square overflow-hidden rounded-md">
+                        <img
+                          src={image.url}
+                          alt={image.partLabel}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <p className="mt-1 truncate text-[10px] text-muted-foreground">
+                        {image.partLabel}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button
