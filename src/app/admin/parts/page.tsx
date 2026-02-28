@@ -236,16 +236,14 @@ export default function PartsPage() {
         </>
       )}
 
-      {isAddInventoryOpen && (
-        <InventoryForm
-          open={isAddInventoryOpen}
-          onOpenChange={(open) => {
-            setIsAddInventoryOpen(open);
-            if (!open) setPrefilledPart(null);
-          }}
-          prefillPart={prefilledPart ?? undefined}
-        />
-      )}
+      <InventoryForm
+        open={isAddInventoryOpen}
+        onOpenChange={(open) => {
+          setIsAddInventoryOpen(open);
+          if (!open) setPrefilledPart(null);
+        }}
+        prefillPart={prefilledPart ?? undefined}
+      />
 
       {selectedInventory && (
         <>
@@ -253,7 +251,6 @@ export default function PartsPage() {
             open={isEditInventoryOpen}
             onOpenChange={(open) => {
               setIsEditInventoryOpen(open);
-              if (!open) setSelectedInventory(null);
             }}
             defaultValues={selectedInventory}
             isEditing
@@ -262,7 +259,6 @@ export default function PartsPage() {
             open={isDuplicateInventoryOpen}
             onOpenChange={(open) => {
               setIsDuplicateInventoryOpen(open);
-              if (!open) setSelectedInventory(null);
             }}
             defaultValues={selectedInventory}
             isDuplicating
