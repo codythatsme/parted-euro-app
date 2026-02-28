@@ -1275,7 +1275,7 @@ export function FilterValueOptionController<TData, TValue>({
                         count === 0 && 'slashed-zero',
                       )}
                     >
-                      {count < 100 ? count : '100+'}
+                      {count}
                     </sup>
                   </span>
                 </div>
@@ -1435,7 +1435,7 @@ export function FilterValueMultiOptionController<
                         count === 0 && 'slashed-zero',
                       )}
                     >
-                      {count < 100 ? count : '100+'}
+                      {count}
                     </sup>
                   </span>
                 </div>
