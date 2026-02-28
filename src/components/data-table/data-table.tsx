@@ -93,7 +93,7 @@ export function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: (value: string) => void setGlobalFilter(value),
-    globalFilterFn,
+    ...(globalFilterFn != null && { globalFilterFn }),
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
