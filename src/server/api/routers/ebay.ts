@@ -869,6 +869,8 @@ export const ebayRouter = createTRPCRouter({
       },
     });
 
+    console.log(`Regenerating ${listings.length} listings`);
+
     const settings = await ctx.db.ebaySettings.findFirst();
     const template =
       settings?.listingTemplate ?? DEFAULT_EBAY_LISTING_TEMPLATE;
