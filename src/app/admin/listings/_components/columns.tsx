@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { Badge } from "~/components/ui/badge";
 import { type AdminListingsItem } from "~/trpc/shared";
 
 const formatter = new Intl.NumberFormat("en-AU", {
@@ -131,7 +132,9 @@ export function getListingColumns({
         }),
       },
       cell: ({ row }) => (
-        <span className="text-xs">{row.original.listedOnEbay ? "Listed" : "Not listed"}</span>
+        <Badge variant={row.original.listedOnEbay ? "default" : "outline"}>
+          {row.original.listedOnEbay ? "Listed" : "Not listed"}
+        </Badge>
       ),
     },
     {
