@@ -757,37 +757,166 @@ export const checkoutRouter = createTRPCRouter({
         url: session.url,
       };
     }),
-  //   getAdminCheckoutSession: adminProcedure
-  //     .input(
-  //       z.object({
-  //         items: z.array(
-  //           z.object({
-  //             itemId: z.string(),
-  //             quantity: z.number(),
-  //             price: z.number(),
-  //           }),
-  //         ),
-  //         name: z.string(),
-  //         email: z.string(),
-  //         countryCode: z.string(),
-  //         shippingOptions: z.array(
-  //           z.object({
-  //             shipping_rate_data: z.object({
-  //               type: z.string(),
-  //               display_name: z.string(),
-  //               fixed_amount: z.object({
-  //                 amount: z.number(),
-  //                 currency: z.string(),
-  //               }),
-  //             }),
-  //           }),
-  //         ),
-  //       }),
-  //     )
-  //     .query(async ({ ctx, input }) => {
-  //       const url = await createStripeSession({ ...input, adminCreated: true });
-  //       return url;
-  //     }),
+  getDirectStripeCheckout: adminProcedure
+    .input(
+      z.object({
+        items: z.array(
+          z.object({
+            partId: z.string(),
+            description: z.string(),
+            price: z.number(),
+          }),
+        ),
+        name: z.string(),
+        email: z.string(),
+        shippingMethod: z.string(),
+        postageCost: z.number(),
+        countryCode: z.string(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const stripe = new Stripe(process.env.STRIPE_SECRET!, {
+        apiVersion: "2022-11-15",
+      });
+
+      const partIds = input.items.map((i) => i.partId);
+      const parts = await db.part.findMany({
+        where: { id: { in: partIds } },
+        select: {
+          id: true,
+          status: true,
+          allocatedToListingId: true,
+        },
+      });
+
+      if (parts.length !== partIds.length) {
+        throw new Error("One or more parts not found.");
+      }
+
+      const unavailable = parts.filter((p) => p.status !== PartStatus.AVAILABLE);
+      if (unavailable.length > 0) {
+        throw new Error("One or more parts are not available.");
+      }
+
+      const partById = new Map(parts.map((p) => [p.id, p]));
+      const subtotal = input.items.reduce((acc, i) => acc + i.price, 0);
+
+      const redirectURL =
+        process.env.NODE_ENV === "development"
+          ? "http://localhost:3000"
+          : "https://partedeuro.com.au";
+
+      const order = await db.$transaction(async (tx) => {
+        const newOrder = await tx.order.create({
+          data: {
+            name: input.name,
+            email: input.email,
+            status: "Pending payment",
+            subtotal: Math.round(subtotal * 100),
+            shipping: Math.round(input.postageCost * 100),
+            shippingMethod: input.shippingMethod,
+          },
+        });
+
+        for (const item of input.items) {
+          const part = partById.get(item.partId);
+          const orderItem = await tx.orderItem.create({
+            data: {
+              orderId: newOrder.id,
+              listingId: part?.allocatedToListingId ?? null,
+              description: item.description,
+              quantity: 1,
+              unitPrice: item.price,
+            },
+          });
+
+          await tx.orderItemPart.create({
+            data: {
+              orderItemId: orderItem.id,
+              partId: item.partId,
+            },
+          });
+        }
+
+        const updated = await tx.part.updateMany({
+          where: {
+            id: { in: partIds },
+            status: PartStatus.AVAILABLE,
+          },
+          data: {
+            status: PartStatus.RESERVED,
+            reservedAt: new Date(),
+          },
+        });
+
+        if (updated.count !== partIds.length) {
+          throw new Error("Inventory changed while reserving. Please retry.");
+        }
+
+        return newOrder;
+      });
+
+      const affectedListingIds = parts
+        .map((p) => p.allocatedToListingId)
+        .filter((id): id is string => id !== null);
+      if (affectedListingIds.length > 0) {
+        await syncEbayQuantitiesForListings(affectedListingIds).catch((error) => {
+          console.error("eBay quantity sync failed after direct stripe checkout", error);
+        });
+      }
+
+      const customer = await stripe.customers.create({
+        email: input.email,
+        name: input.name,
+      });
+
+      const stripeLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] =
+        input.items.map((item) => ({
+          price_data: {
+            currency: "aud",
+            product_data: { name: item.description },
+            unit_amount: Math.round(item.price * 100),
+          },
+          quantity: 1,
+        }));
+
+      const shippingOptions: Stripe.Checkout.SessionCreateParams.ShippingOption[] =
+        input.postageCost > 0
+          ? [
+              {
+                shipping_rate_data: {
+                  type: "fixed_amount",
+                  display_name: input.shippingMethod,
+                  fixed_amount: {
+                    amount: Math.round(input.postageCost * 100),
+                    currency: "aud",
+                  },
+                },
+              },
+            ]
+          : [];
+
+      const session = await stripe.checkout.sessions.create({
+        customer: customer.id,
+        payment_method_types: ["card", "afterpay_clearpay", "link"],
+        phone_number_collection: { enabled: true },
+        shipping_address_collection: {
+          allowed_countries: [
+            input.countryCode,
+          ] as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[],
+        },
+        shipping_options: shippingOptions,
+        line_items: stripeLineItems,
+        mode: "payment",
+        expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+        success_url: `${redirectURL}/checkout/confirmation/${order.id}`,
+        cancel_url: `${redirectURL}/checkout?stripeError=true`,
+        metadata: { orderId: order.id },
+      });
+
+      return { url: session.url };
+    }),
+
   getShippingCountries: publicProcedure.query(async () => {
     const res = await fetch(`${auspostBaseUrl}/postage/country.json`, {
       headers: {

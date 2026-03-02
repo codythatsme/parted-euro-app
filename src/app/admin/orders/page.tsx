@@ -12,6 +12,9 @@ import { type AdminOrdersItem } from "~/trpc/shared";
 import { toast } from "sonner";
 import { useQueryState } from "nuqs";
 import { useAdminTitle } from "~/hooks/use-admin-title";
+import Link from "next/link";
+import { Button } from "~/components/ui/button";
+import { Plus } from "lucide-react";
 
 export default function OrdersAdminPage() {
   useAdminTitle("Orders");
@@ -147,7 +150,15 @@ export default function OrdersAdminPage() {
 
   return (
     <div className="max-w-full p-6">
-      <h1 className="mb-6 text-3xl font-bold">Orders Management</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Orders Management</h1>
+        <Link href="/admin/orders/create">
+          <Button>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Order
+          </Button>
+        </Link>
+      </div>
 
       {isLoading && (
         <div className="flex h-20 items-center justify-center">
