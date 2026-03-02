@@ -7,7 +7,6 @@ import { type XeroItem } from "~/server/xero/createInvoice";
 import { createXeroInvoice } from "~/server/xero/createInvoice";
 import { PartStatus } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
-import { calculateRequiredPartCounts, calculateStock } from "~/server/lib/stock";
 import { syncEbayQuantitiesForListings } from "~/server/lib/ebay-sync";
 
 export const xero = new XeroClient({
@@ -103,238 +102,12 @@ export const xeroRouter = createTRPCRouter({
     const activeTenantId = xero.tenants[0].tenantId;
     return !!activeTenantId;
   }),
-  createCashOrder: adminProcedure
-    .input(
-      z.object({
-        name: z.string(),
-        email: z.string(),
-        phone: z.string(),
-        shippingMethod: z.string(),
-        postageCost: z.number(),
-        countryCode: z.string(),
-        items: z.array(
-          z.object({
-            itemId: z.string(),
-            quantity: z.number(),
-            price: z.number(),
-          }),
-        ),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      try {
-        // Calculate subtotal
-        const subtotal = input.items.reduce(
-          (acc, item) => acc + item.price * item.quantity,
-          0,
-        );
-
-        const listingIds = input.items.map((item) => item.itemId);
-        const listings = await db.listing.findMany({
-          where: {
-            id: {
-              in: listingIds,
-            },
-          },
-          select: {
-            id: true,
-            title: true,
-            components: {
-              select: {
-                partDetailId: true,
-                quantity: true,
-              },
-            },
-            allocatedParts: {
-              select: {
-                id: true,
-                partDetailsId: true,
-                status: true,
-              },
-            },
-          },
-        });
-        const listingsById = new Map(listings.map((listing) => [listing.id, listing]));
-        if (listingsById.size !== listingIds.length) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "One or more listings are unavailable.",
-          });
-        }
-
-        for (const item of input.items) {
-          const listing = listingsById.get(item.itemId);
-          if (!listing) continue;
-
-          const stock = calculateStock({
-            components: listing.components,
-            inventoryParts: listing.allocatedParts.map((part) => ({
-              partDetailsId: part.partDetailsId,
-              status: part.status,
-            })),
-          });
-
-          if (stock < item.quantity) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: `${listing.title} is out of stock for requested quantity.`,
-            });
-          }
-        }
-
-        const order = await db.$transaction(async (tx) => {
-          const createdOrder = await tx.order.create({
-            data: {
-              name: input.name,
-              email: input.email,
-              shipping: Math.round(input.postageCost * 100),
-              subtotal: Math.round(subtotal * 100),
-              status: "PAID",
-              shippingMethod: input.shippingMethod,
-            },
-          });
-
-          for (const item of input.items) {
-            const listing = listingsById.get(item.itemId);
-            if (!listing) {
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: "Listing not found while creating order.",
-              });
-            }
-
-            const orderItem = await tx.orderItem.create({
-              data: {
-                listingId: item.itemId,
-                quantity: item.quantity,
-                unitPrice: item.price,
-                orderId: createdOrder.id,
-              },
-            });
-
-            const requirements = calculateRequiredPartCounts(
-              listing.components.map((component) => ({
-                partDetailId: component.partDetailId,
-                quantity: component.quantity,
-              })),
-              item.quantity,
-            );
-
-            const soldPartIds: string[] = [];
-            for (const requirement of requirements) {
-              const candidates = await tx.part.findMany({
-                where: {
-                  allocatedToListingId: listing.id,
-                  partDetailsId: requirement.partDetailId,
-                  status: PartStatus.AVAILABLE,
-                },
-                orderBy: {
-                  createdAt: "asc",
-                },
-                take: requirement.required,
-                select: {
-                  id: true,
-                },
-              });
-
-              if (candidates.length < requirement.required) {
-                throw new TRPCError({
-                  code: "BAD_REQUEST",
-                  message: `${listing.title} is out of stock for requested quantity.`,
-                });
-              }
-
-              soldPartIds.push(...candidates.map((candidate) => candidate.id));
-            }
-
-            if (soldPartIds.length > 0) {
-              const updateResult = await tx.part.updateMany({
-                where: {
-                  id: {
-                    in: soldPartIds,
-                  },
-                  status: PartStatus.AVAILABLE,
-                },
-                data: {
-                  status: PartStatus.SOLD,
-                  reservedAt: null,
-                },
-              });
-
-              if (updateResult.count !== soldPartIds.length) {
-                throw new TRPCError({
-                  code: "BAD_REQUEST",
-                  message:
-                    "Inventory changed while creating cash order. Please retry.",
-                });
-              }
-
-              await tx.orderItemPart.createMany({
-                data: soldPartIds.map((partId) => ({
-                  orderItemId: orderItem.id,
-                  partId,
-                })),
-                skipDuplicates: true,
-              });
-            }
-          }
-
-          return createdOrder;
-        });
-
-        // Format items for Xero invoice
-        const lineItemsFormatted: XeroItem[] = input.items.map((item) => {
-          const listing = listingsById.get(item.itemId);
-          return {
-            description: listing?.title ?? item.itemId,
-            quantity: item.quantity,
-            unitAmount: item.price,
-            accountCode: "200",
-          };
-        });
-
-        // Add shipping as line item if exists
-        if (input.postageCost > 0) {
-          lineItemsFormatted.push({
-            description: "Shipping",
-            quantity: 1,
-            unitAmount: input.postageCost,
-            accountCode: "210",
-            lineAmount: input.postageCost,
-          });
-        }
-
-        // Create Xero invoice
-        await createXeroInvoice({
-          items: lineItemsFormatted,
-          customerPhone: input.phone,
-          customerEmail: input.email,
-          customerName: input.name,
-          orderId: order.id,
-          shippingAddress: {
-            country: input.countryCode,
-          },
-          shippingCost: input.postageCost,
-          shippingMethod: input.shippingMethod,
-        });
-
-        await syncEbayQuantitiesForListings(listingIds).catch((error) => {
-          console.error("eBay quantity sync failed after cash order", error);
-        });
-
-        return { success: true, orderId: order.id };
-      } catch (error) {
-        console.error("Error creating cash order:", error);
-        throw new Error("Failed to create cash order");
-      }
-    }),
-
   createDirectCashOrder: adminProcedure
     .input(
       z.object({
-        name: z.string(),
-        email: z.string(),
-        phone: z.string(),
+        name: z.string().default(""),
+        email: z.string().default(""),
+        phone: z.string().default(""),
         shippingMethod: z.string(),
         postageCost: z.number(),
         countryCode: z.string(),
@@ -375,6 +148,8 @@ export const xeroRouter = createTRPCRouter({
         });
       }
 
+      const partById = new Map(parts.map((p) => [p.id, p]));
+
       const order = await db.$transaction(async (tx) => {
         const createdOrder = await tx.order.create({
           data: {
@@ -388,10 +163,11 @@ export const xeroRouter = createTRPCRouter({
         });
 
         for (const item of input.items) {
+          const part = partById.get(item.partId);
           const orderItem = await tx.orderItem.create({
             data: {
               orderId: createdOrder.id,
-              listingId: null,
+              listingId: part?.allocatedToListingId ?? null,
               description: item.description,
               quantity: 1,
               unitPrice: item.price,
@@ -444,16 +220,18 @@ export const xeroRouter = createTRPCRouter({
         });
       }
 
-      await createXeroInvoice({
-        items: lineItemsFormatted,
-        customerPhone: input.phone,
-        customerEmail: input.email,
-        customerName: input.name,
-        orderId: order.id,
-        shippingAddress: { country: input.countryCode },
-        shippingCost: input.postageCost,
-        shippingMethod: input.shippingMethod,
-      });
+      if (input.email) {
+        await createXeroInvoice({
+          items: lineItemsFormatted,
+          customerPhone: input.phone,
+          customerEmail: input.email,
+          customerName: input.name,
+          orderId: order.id,
+          shippingAddress: { country: input.countryCode },
+          shippingCost: input.postageCost,
+          shippingMethod: input.shippingMethod,
+        });
+      }
 
       const affectedListingIds = parts
         .map((p) => p.allocatedToListingId)

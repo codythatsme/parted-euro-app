@@ -1,10 +1,7 @@
 import { PartStatus, type Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import {
-  calculateRequiredPartCounts,
-  calculateStock,
-} from "~/server/lib/stock";
+import { calculateStock } from "~/server/lib/stock";
 import { syncEbayQuantitiesForListings, syncEbayQuantityForListing } from "~/server/lib/ebay-sync";
 import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
 
@@ -728,27 +725,47 @@ export const listingsRouter = createTRPCRouter({
       }));
     }),
 
-  markPartsSold: adminProcedure
-    .input(
-      z.object({
-        items: z.array(
-          z.object({
-            listingId: z.string(),
-            quantity: z.number().int().positive(),
-          }),
-        ),
-        orderName: z.string().default("eBay order"),
-        orderEmail: z.string().default("ebay-order@partedeuro.local"),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const listingIds = input.items.map((item) => item.listingId);
+  searchByPartNo: adminProcedure
+    .input(z.object({ query: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const searchTerms = prepareSearchTerms(input.query);
+      if (searchTerms.length === 0) return [];
+
+      const searchConditions: Prisma.ListingWhereInput[] = searchTerms.map(
+        (term) => ({
+          OR: [
+            { title: { contains: term, mode: "insensitive" } },
+            {
+              components: {
+                some: {
+                  partDetail: {
+                    partNo: { contains: term, mode: "insensitive" },
+                  },
+                },
+              },
+            },
+            {
+              components: {
+                some: {
+                  partDetail: {
+                    alternatePartNumbers: {
+                      contains: term,
+                      mode: "insensitive",
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        }),
+      );
+
       const listings = await ctx.db.listing.findMany({
         where: {
-          id: {
-            in: listingIds,
-          },
+          active: true,
+          AND: searchConditions,
         },
+        take: 20,
         select: {
           id: true,
           title: true,
@@ -757,143 +774,142 @@ export const listingsRouter = createTRPCRouter({
             select: {
               partDetailId: true,
               quantity: true,
+              partDetail: { select: { partNo: true } },
             },
           },
           allocatedParts: {
             select: {
+              id: true,
               partDetailsId: true,
               status: true,
+              variant: true,
+              donorVin: true,
             },
           },
         },
       });
-      const listingById = new Map(listings.map((listing) => [listing.id, listing]));
 
-      for (const item of input.items) {
-        const listing = listingById.get(item.listingId);
-        if (!listing) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: `Listing ${item.listingId} not found`,
-          });
-        }
+      return listings
+        .map((listing) => ({
+          id: listing.id,
+          title: listing.title,
+          price: listing.price,
+          partNos: listing.components.map((c) => c.partDetail.partNo),
+          availableParts: listing.allocatedParts
+            .filter((p) => p.status === PartStatus.AVAILABLE)
+            .map((p) => ({
+              id: p.id,
+              variant: p.variant,
+              donorVin: p.donorVin,
+            })),
+        }))
+        .filter((listing) => listing.availableParts.length > 0);
+    }),
 
-        const stock = calculateStock({
-          components: listing.components,
-          inventoryParts: listing.allocatedParts,
+  markPartsSoldDirect: adminProcedure
+    .input(z.object({ partIds: z.array(z.string().min(1)).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const parts = await ctx.db.part.findMany({
+        where: { id: { in: input.partIds } },
+        select: {
+          id: true,
+          status: true,
+          allocatedToListingId: true,
+          partDetails: { select: { partNo: true, name: true } },
+        },
+      });
+
+      if (parts.length !== input.partIds.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One or more parts not found.",
         });
-        if (stock < item.quantity) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `${listing.title} is out of stock for requested quantity.`,
-          });
-        }
       }
 
-      const result = await ctx.db.$transaction(async (tx) => {
-        const subtotal = input.items.reduce((acc, item) => {
-          const listing = listingById.get(item.listingId);
-          return acc + (listing?.price ?? 0) * item.quantity;
-        }, 0);
+      const unavailable = parts.filter((p) => p.status !== PartStatus.AVAILABLE);
+      if (unavailable.length > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One or more parts are not available.",
+        });
+      }
 
+      const subtotal = 0; // eBay orders — price tracked externally
+
+      const result = await ctx.db.$transaction(async (tx) => {
         const order = await tx.order.create({
           data: {
-            name: input.orderName,
-            email: input.orderEmail,
-            subtotal: Math.round(subtotal * 100),
+            name: "eBay order",
+            email: "ebay-order@partedeuro.local",
+            subtotal,
             status: "PAID",
           },
         });
 
-        for (const item of input.items) {
-          const listing = listingById.get(item.listingId);
-          if (!listing) continue;
+        // Group parts by listing for OrderItem grouping
+        const byListing = new Map<string | null, typeof parts>();
+        for (const part of parts) {
+          const key = part.allocatedToListingId;
+          const group = byListing.get(key) ?? [];
+          group.push(part);
+          byListing.set(key, group);
+        }
+
+        for (const [listingId, groupParts] of byListing) {
+          const description = groupParts
+            .map((p) => [p.partDetails?.name, p.partDetails?.partNo].filter(Boolean).join(" — "))
+            .join(", ");
 
           const orderItem = await tx.orderItem.create({
             data: {
               orderId: order.id,
-              listingId: listing.id,
-              quantity: item.quantity,
-              unitPrice: listing.price,
+              listingId: listingId ?? undefined,
+              description,
+              quantity: groupParts.length,
+              unitPrice: 0,
             },
           });
 
-          const requirements = calculateRequiredPartCounts(
-            listing.components.map((component) => ({
-              partDetailId: component.partDetailId,
-              quantity: component.quantity,
+          await tx.orderItemPart.createMany({
+            data: groupParts.map((p) => ({
+              orderItemId: orderItem.id,
+              partId: p.id,
             })),
-            item.quantity,
-          );
-
-          const soldPartIds: string[] = [];
-          for (const requirement of requirements) {
-            const candidates = await tx.part.findMany({
-              where: {
-                allocatedToListingId: listing.id,
-                partDetailsId: requirement.partDetailId,
-                status: PartStatus.AVAILABLE,
-              },
-              orderBy: {
-                createdAt: "asc",
-              },
-              take: requirement.required,
-              select: {
-                id: true,
-              },
-            });
-
-            if (candidates.length < requirement.required) {
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: `${listing.title} is out of stock for requested quantity.`,
-              });
-            }
-
-            soldPartIds.push(...candidates.map((candidate) => candidate.id));
-          }
-
-          if (soldPartIds.length > 0) {
-            const updated = await tx.part.updateMany({
-              where: {
-                id: {
-                  in: soldPartIds,
-                },
-                status: PartStatus.AVAILABLE,
-              },
-              data: {
-                status: PartStatus.SOLD,
-                reservedAt: null,
-              },
-            });
-
-            if (updated.count !== soldPartIds.length) {
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: "Inventory changed while finalizing order. Please retry.",
-              });
-            }
-
-            await tx.orderItemPart.createMany({
-              data: soldPartIds.map((partId) => ({
-                orderItemId: orderItem.id,
-                partId,
-              })),
-              skipDuplicates: true,
-            });
-          }
+            skipDuplicates: true,
+          });
         }
 
-        return {
-          success: true,
-          orderId: order.id,
-        };
+        const updated = await tx.part.updateMany({
+          where: {
+            id: { in: input.partIds },
+            status: PartStatus.AVAILABLE,
+          },
+          data: {
+            status: PartStatus.SOLD,
+            reservedAt: null,
+          },
+        });
+
+        if (updated.count !== input.partIds.length) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Inventory changed while creating order. Please retry.",
+          });
+        }
+
+        return { orderId: order.id };
       });
 
-      await syncEbayQuantitiesForListings(listingIds).catch((error) => {
-        console.error("eBay quantity sync failed after markPartsSold", error);
-      });
-      return result;
+      const affectedListingIds = parts
+        .map((p) => p.allocatedToListingId)
+        .filter((id): id is string => id !== null);
+      if (affectedListingIds.length > 0) {
+        await syncEbayQuantitiesForListings(affectedListingIds).catch((error) => {
+          console.error("eBay quantity sync failed after markPartsSoldDirect", error);
+        });
+      }
+
+      return { success: true, orderId: result.orderId };
     }),
 
   searchListings: publicProcedure

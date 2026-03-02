@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "~/trpc/react";
 import { DataTable } from "~/components/data-table/data-table";
 import { getListingColumns } from "./_components/columns";
@@ -8,19 +8,12 @@ import { ListingForm } from "./_components/listing-form";
 import { DeleteListingDialog } from "./_components/delete-listing-dialog";
 import { keepPreviousData } from "@tanstack/react-query";
 import { Button } from "~/components/ui/button";
-import { Plus, ShoppingCart } from "lucide-react";
+import { Plus } from "lucide-react";
 import { ListOnEbayDialog } from "./_components/list-on-ebay-dialog";
 import { type AdminListingsItem } from "~/trpc/shared";
 import { useQueryState } from "nuqs";
-import {
-  BulkOrderDialog,
-  type OrderItem,
-} from "./_components/bulk-order-dialog";
-import { FinalizeOrderDialog } from "./_components/finalize-order-dialog";
-import { OrderToast } from "./_components/order-toast";
 import { toast } from "sonner";
 import { useAdminTitle } from "~/hooks/use-admin-title";
-import { useCallback } from "react";
 
 export default function ListingsAdminPage() {
   useAdminTitle("Listings");
@@ -29,12 +22,8 @@ export default function ListingsAdminPage() {
   const [isEditListingOpen, setIsEditListingOpen] = useState(false);
   const [isDeleteListingOpen, setIsDeleteListingOpen] = useState(false);
   const [isListOnEbayOpen, setIsListOnEbayOpen] = useState(false);
-  const [isBulkOrderOpen, setIsBulkOrderOpen] = useState(false);
-  const [isFinalizeOrderOpen, setIsFinalizeOrderOpen] = useState(false);
   const [selectedListing, setSelectedListing] =
     useState<AdminListingsItem | null>(null);
-  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
-  const [selectedRows, setSelectedRows] = useState<AdminListingsItem[]>([]);
 
     const [globalFilter, setGlobalFilter] = useQueryState("search", {
       defaultValue: "",
@@ -102,35 +91,6 @@ export default function ListingsAdminPage() {
     setIsListOnEbayOpen(true);
   };
 
-  const handleCreateBulkOrder = () => {
-    if (selectedRows.length === 0) {
-      toast.error("Please select at least one listing");
-      return;
-    }
-    setIsBulkOrderOpen(true);
-  };
-
-  const handleOrderCreate = (newOrderItems: OrderItem[]) => {
-    setOrderItems(newOrderItems);
-    toast.custom(
-      (id) => (
-        <OrderToast
-          orderItems={newOrderItems}
-          onFinalizeClick={() => {
-            setIsFinalizeOrderOpen(true);
-            toast.dismiss(id);
-          }}
-        />
-      ),
-      { id: "order-toast", duration: Infinity },
-    );
-  };
-
-  const handleOrderComplete = () => {
-    setOrderItems([]);
-    toast.dismiss("order-toast");
-  };
-
   const utils = api.useUtils();
   const unretireMutation = api.listings.unretire.useMutation({
     onSuccess: () => {
@@ -172,22 +132,10 @@ export default function ListingsAdminPage() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Listings Management</h1>
-        <div className="flex space-x-2">
-          {orderItems.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setIsFinalizeOrderOpen(true)}
-            >
-              <ShoppingCart className="mr-2 h-4 w-4" />
-              Order ({orderItems.length})
-            </Button>
-          )}
-          <Button size="sm" onMouseDown={handleAddListing}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Listing
-          </Button>
-        </div>
+        <Button size="sm" onMouseDown={handleAddListing}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Listing
+        </Button>
       </div>
 
       {isLoading && (
@@ -201,22 +149,13 @@ export default function ListingsAdminPage() {
           <DataTable
             columns={columns}
             data={listings}
-            onSelectionChange={setSelectedRows}
             globalFilter={globalFilter}
             setGlobalFilter={setGlobalFilter}
             pageIndex={pageIndex}
             setPageIndex={setPageIndex}
             pageSize={pageSize}
             setPageSize={setPageSize}
-              />
-          <div className="mt-4 flex justify-end">
-            <Button
-              onClick={handleCreateBulkOrder}
-              disabled={selectedRows.length === 0}
-            >
-              Create Order from Selected ({selectedRows.length})
-            </Button>
-          </div>
+          />
         </>
       )}
 
@@ -248,20 +187,6 @@ export default function ListingsAdminPage() {
         </>
       )}
 
-      <BulkOrderDialog
-        open={isBulkOrderOpen}
-        onOpenChange={setIsBulkOrderOpen}
-        selectedListings={selectedRows}
-        onOrderCreate={handleOrderCreate}
-      />
-
-      <FinalizeOrderDialog
-        open={isFinalizeOrderOpen}
-        onOpenChange={setIsFinalizeOrderOpen}
-        orderItems={orderItems}
-        listings={listings}
-        onOrderComplete={handleOrderComplete}
-      />
     </div>
   );
 }
