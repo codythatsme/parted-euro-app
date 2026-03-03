@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Copy, MoreHorizontal, Pencil, Plus, Tag, Trash } from "lucide-react";
+import { Copy, ExternalLink, MoreHorizontal, Pencil, Plus, Tag, Trash } from "lucide-react";
 import { type AdminInventoryItem } from "~/trpc/shared";
 import { Button } from "~/components/ui/button";
 import {
@@ -95,16 +95,25 @@ export function InventoryExpandedPanel({
                     </TableCell>
                     <TableCell>
                       {item.allocatedToListing
-                        ? <Link
-                            href={`/listings/${item.allocatedToListing.id}`}
-                            className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
-                            target="_blank"
-                          >
-                            {item.allocatedToListing.title}
-                            <span className="ml-1 text-muted-foreground">
-                              (${item.allocatedToListing.price.toFixed(2)})
-                            </span>
-                          </Link>
+                        ? <div className="flex items-center gap-2">
+                            <Link
+                              href={`/listings/${item.allocatedToListing.id}`}
+                              className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground"
+                              target="_blank"
+                            >
+                              {item.allocatedToListing.title}
+                              <span className="ml-1 text-muted-foreground">
+                                (${item.allocatedToListing.price.toFixed(2)})
+                              </span>
+                            </Link>
+                            <Link
+                              href={`/admin/listings?edit=${item.allocatedToListing.id}`}
+                              className="text-muted-foreground hover:text-foreground"
+                              title="Edit listing"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Link>
+                          </div>
                         : "Unallocated"}
                     </TableCell>
                     <TableCell>{item.donorVin ?? "-"}</TableCell>

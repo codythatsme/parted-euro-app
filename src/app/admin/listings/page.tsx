@@ -116,6 +116,19 @@ export default function ListingsAdminPage() {
     onListOnEbay: handleListOnEbay,
   });
 
+  const [editId, setEditId] = useQueryState("edit");
+
+  // Auto-open edit dialog when ?edit=<listingId> is present
+  useEffect(() => {
+    if (editId && listings.length > 0) {
+      const listing = listings.find((l) => l.id === editId);
+      if (listing) {
+        handleEditListing(listing);
+      }
+      void setEditId(null);
+    }
+  }, [editId, listings]);
+
   const updateRefreshToken = api.ebay.setTokenSet.useMutation();
 
   useEffect(() => {
