@@ -157,14 +157,19 @@ export const partRouter = createTRPCRouter({
     .input(z.object({ partNo: z.string().trim() }))
     .query(async ({ ctx, input }) => {
       const { partNo } = input;
-      const part = await ctx.db.partDetail.findUnique({
-        where: { partNo },
-        include: {
-          cars: true,
-          partTypes: true,
-        },
-      });
-      return part;
+      const [part, recentLocated] = await Promise.all([
+        ctx.db.partDetail.findUnique({
+          where: { partNo },
+          include: { cars: true, partTypes: true },
+        }),
+        ctx.db.part.findFirst({
+          where: { partDetailsId: partNo, inventoryLocationId: { not: null } },
+          orderBy: { createdAt: "desc" },
+          select: { inventoryLocationId: true },
+        }),
+      ]);
+      if (!part) return null;
+      return { ...part, defaultLocationId: recentLocated?.inventoryLocationId ?? null };
     }),
 
   // Create a new part

@@ -464,6 +464,10 @@ export function PartInventoryForm({
       cars: carIds,
       partTypes: typeIds,
     });
+
+    if (partDetails.defaultLocationId && !form.getValues("inventoryLocationId")) {
+      form.setValue("inventoryLocationId", partDetails.defaultLocationId);
+    }
   }, [partDetails, form]);
 
   // Load part details on edit
