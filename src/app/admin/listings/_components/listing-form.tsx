@@ -163,6 +163,7 @@ export function ListingForm({
 
   const allocatedImages = useMemo(() => {
     if (allocationIds.length === 0) return [];
+    const seen = new Set<string>();
     return inventoryItems
       .filter((item) => allocationIds.includes(item.id))
       .flatMap((item) =>
@@ -172,7 +173,12 @@ export function ListingForm({
             ...img,
             partLabel: `${item.partDetails.name}${item.variant ? ` - ${item.variant}` : ""}`,
           })),
-      );
+      )
+      .filter((img) => {
+        if (seen.has(img.url)) return false;
+        seen.add(img.url);
+        return true;
+      });
   }, [allocationIds, inventoryItems, excludedImageIds]);
 
   const isSubmitting =
