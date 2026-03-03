@@ -1190,7 +1190,7 @@ export function PartInventoryForm({
                                   placeholder="Enter part number"
                                   {...field}
                                   value={field.value ?? ""}
-                                  disabled={!(isNewPart && mode.kind === "addInventory")}
+                                  disabled={!(isNewPart && (mode.kind === "addInventory" || mode.kind === "duplicateInventory"))}
                                 />
                               </FormControl>
                               <FormMessage />
