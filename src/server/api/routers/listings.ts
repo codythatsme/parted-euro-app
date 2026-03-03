@@ -807,19 +807,35 @@ export const listingsRouter = createTRPCRouter({
     }),
 
   markPartsSoldDirect: adminProcedure
-    .input(z.object({ partIds: z.array(z.string().min(1)).min(1) }))
+    .input(
+      z.object({
+        name: z.string().default(""),
+        email: z.string().default(""),
+        phone: z.string().default(""),
+        shippingMethod: z.string(),
+        postageCost: z.number(),
+        countryCode: z.string(),
+        items: z.array(
+          z.object({
+            partId: z.string(),
+            description: z.string(),
+            price: z.number(),
+          }),
+        ),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
+      const partIds = input.items.map((item) => item.partId);
       const parts = await ctx.db.part.findMany({
-        where: { id: { in: input.partIds } },
+        where: { id: { in: partIds } },
         select: {
           id: true,
           status: true,
           allocatedToListingId: true,
-          partDetails: { select: { partNo: true, name: true } },
         },
       });
 
-      if (parts.length !== input.partIds.length) {
+      if (parts.length !== partIds.length) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "One or more parts not found.",
@@ -834,54 +850,44 @@ export const listingsRouter = createTRPCRouter({
         });
       }
 
-      const subtotal = 0; // eBay orders — price tracked externally
+      const subtotal = input.items.reduce((acc, item) => acc + item.price, 0);
+      const partById = new Map(parts.map((p) => [p.id, p]));
 
       const result = await ctx.db.$transaction(async (tx) => {
         const order = await tx.order.create({
           data: {
-            name: "eBay order",
-            email: "ebay-order@partedeuro.local",
-            subtotal,
+            name: input.name,
+            email: input.email,
+            shipping: Math.round(input.postageCost * 100),
+            subtotal: Math.round(subtotal * 100),
             status: "PAID",
+            shippingMethod: input.shippingMethod,
           },
         });
 
-        // Group parts by listing for OrderItem grouping
-        const byListing = new Map<string | null, typeof parts>();
-        for (const part of parts) {
-          const key = part.allocatedToListingId;
-          const group = byListing.get(key) ?? [];
-          group.push(part);
-          byListing.set(key, group);
-        }
-
-        for (const [listingId, groupParts] of byListing) {
-          const description = groupParts
-            .map((p) => [p.partDetails?.name, p.partDetails?.partNo].filter(Boolean).join(" — "))
-            .join(", ");
-
+        for (const item of input.items) {
+          const part = partById.get(item.partId);
           const orderItem = await tx.orderItem.create({
             data: {
               orderId: order.id,
-              listingId: listingId ?? undefined,
-              description,
-              quantity: groupParts.length,
-              unitPrice: 0,
+              listingId: part?.allocatedToListingId ?? null,
+              description: item.description,
+              quantity: 1,
+              unitPrice: item.price,
             },
           });
 
-          await tx.orderItemPart.createMany({
-            data: groupParts.map((p) => ({
+          await tx.orderItemPart.create({
+            data: {
               orderItemId: orderItem.id,
-              partId: p.id,
-            })),
-            skipDuplicates: true,
+              partId: item.partId,
+            },
           });
         }
 
         const updated = await tx.part.updateMany({
           where: {
-            id: { in: input.partIds },
+            id: { in: partIds },
             status: PartStatus.AVAILABLE,
           },
           data: {
@@ -890,7 +896,7 @@ export const listingsRouter = createTRPCRouter({
           },
         });
 
-        if (updated.count !== input.partIds.length) {
+        if (updated.count !== partIds.length) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Inventory changed while creating order. Please retry.",
