@@ -15,7 +15,10 @@ import { PendingOrderIndicator } from "./_components/pending-order-indicator";
 import { DirectOrderFinalizeDialog } from "./_components/direct-order-finalize-dialog";
 
 export const metadata: Metadata = {
-  title: "Admin",
+  title: {
+    default: "Admin",
+    template: "%s - Admin",
+  },
 };
 
 export default async function AdminLayout({

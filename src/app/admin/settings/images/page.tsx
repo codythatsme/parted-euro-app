@@ -1,32 +1,8 @@
-"use client";
-import { Separator } from "~/components/ui/separator";
-import { HomepageImageManager } from "./homepage-images";
-import { Card } from "~/components/ui/card";
-import { useAdminTitle } from "~/hooks/use-admin-title";
+import { type Metadata } from "next";
+import { SettingsImagesPage } from "./_components/settings-images-page";
 
-export default function ImagesSettingsPage() {
-  useAdminTitle("Settings - Images");
-  return (
-    <div className="p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Image Settings</h1>
-      </div>
+export const metadata: Metadata = { title: "Settings - Images" };
 
-      <Separator className="my-6" />
-
-      <div className="space-y-8">
-        <div>
-          <h2 className="text-xl font-semibold">Homepage Carousel</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage the images that appear in the homepage carousel. Drag to
-            reorder.
-          </p>
-
-          <Card className="mt-4 p-6">
-            <HomepageImageManager />
-          </Card>
-        </div>
-      </div>
-    </div>
-  );
+export default function Page() {
+  return <SettingsImagesPage />;
 }
