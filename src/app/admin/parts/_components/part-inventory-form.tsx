@@ -214,7 +214,7 @@ const formSchema = z.object({
   partTypes: z.array(z.string()).default([]),
 
   // addPart mode: optional inventory creation
-  createInventory: z.boolean().default(false),
+  createInventory: z.boolean().default(true),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -2169,7 +2169,7 @@ function getFormDefaults(mode: PartInventoryFormMode): FormValues {
         costPrice: 0,
         cars: [],
         partTypes: [],
-        createInventory: false,
+        createInventory: true,
         isNewPart: false,
         donorVin: null,
         inventoryLocationId: null,
