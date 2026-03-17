@@ -90,7 +90,7 @@ export const partRouter = createTRPCRouter({
           },
         },
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ parent: { name: "asc" } }, { name: "asc" }],
     });
 
     return partTypes.map((type) => ({
