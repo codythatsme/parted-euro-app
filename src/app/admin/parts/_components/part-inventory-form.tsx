@@ -502,7 +502,7 @@ export function PartInventoryForm({
     } else if (isNewPart) {
       setAccordionValue(["part-info", "inventory-info"]);
     } else {
-      setAccordionValue(["inventory-info"]);
+      setAccordionValue(["part-info", "inventory-info"]);
     }
   }, [isNewPart, mode, existingPartSelected, shouldCreateInventory]);
 
