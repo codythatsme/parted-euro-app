@@ -172,7 +172,7 @@ export function getOrderColumns({
           <span>{row.original.shippingMethod ?? ""}</span>
           {row.original.shipping > 0 && (
             <span className="text-xs text-muted-foreground">
-              {formatPrice(row.original.shipping * 100)}
+              {formatPrice(row.original.shipping)}
             </span>
           )}
         </div>
@@ -301,7 +301,7 @@ export function getOrderColumns({
       },
       cell: ({ row }) => {
         const subtotal = row.original.subtotal;
-        const shipping = row.original.shipping * 100 || 0;
+        const shipping = row.original.shipping;
         const total = subtotal + shipping;
         return formatPrice(total);
       },

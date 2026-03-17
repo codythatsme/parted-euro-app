@@ -312,7 +312,7 @@ async function generatePickSheetBuffer(
   try {
     const logoSrc = "https://www.partedeuro.com.au/logo.png";
     const subtotalDollars = (order.subtotal ?? 0) / 100;
-    const shippingDollars = order.shipping ?? 0;
+    const shippingDollars = (order.shipping ?? 0) / 100;
 
     const buffer = await renderToBuffer(
       <PickSheetDocument

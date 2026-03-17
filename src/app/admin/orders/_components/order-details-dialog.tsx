@@ -71,7 +71,7 @@ export function OrderDetailsDialog({
   });
 
   const subtotal = order.subtotal;
-  const shipping = (order.shipping ?? 0) * 100;
+  const shipping = order.shipping ?? 0;
   const total = subtotal + shipping;
 
   return (

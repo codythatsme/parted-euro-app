@@ -14,7 +14,7 @@ export async function downloadPickSheet(order: AdminOrdersItem) {
       order={order}
       logoSrc={logoSrc}
       subtotalDollars={order.subtotal}
-      shippingDollars={(order.shipping ?? 0) * 100}
+      shippingDollars={order.shipping ?? 0}
     />,
   ).toBlob();
   const url = URL.createObjectURL(blob);
