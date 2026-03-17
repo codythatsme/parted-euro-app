@@ -1430,8 +1430,18 @@ export function PartInventoryForm({
                                 </Button>
                               </FormControl>
                             </PopoverTrigger>
-                            <PopoverContent className="w-[400px] p-0">
-                              <Command>
+                            <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                              <Command
+                                filter={(value, search, keywords) => {
+                                  const label =
+                                    keywords?.[0]?.toLowerCase() ??
+                                    value.toLowerCase();
+                                  const term = search.toLowerCase();
+                                  if (label.startsWith(term)) return 2;
+                                  if (label.includes(term)) return 1;
+                                  return 0;
+                                }}
+                              >
                                 <CommandInput placeholder="Search categories..." />
                                 <CommandEmpty>
                                   No category found.
