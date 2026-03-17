@@ -314,6 +314,9 @@ export function PartInventoryForm({
       ? mode.defaults
       : undefined;
 
+  const originalPartNo =
+    mode.kind === "duplicateInventory" ? mode.defaults.partDetailsId ?? "" : undefined;
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: getFormDefaults(mode),
@@ -497,6 +500,20 @@ export function PartInventoryForm({
     }
   }, [isNewPart, mode.kind, existingPartSelected, shouldCreateInventory]);
 
+  // duplicateInventory: auto-toggle isNewPart when partNo diverges from original
+  useEffect(() => {
+    if (mode.kind !== "duplicateInventory" || originalPartNo === undefined) return;
+    const current = watchedPartNo?.trim() ?? "";
+    const changed = current !== "" && current !== originalPartNo;
+    if (changed && !isNewPart) {
+      setIsNewPart(true);
+      form.setValue("isNewPart", true);
+    } else if (!changed && isNewPart) {
+      setIsNewPart(false);
+      form.setValue("isNewPart", false);
+    }
+  }, [watchedPartNo, originalPartNo, mode.kind, isNewPart, form]);
+
   // addPart mode: autocomplete handler
   const handleAutocompleteSelect = useCallback(
     (partNo: string) => {
@@ -646,17 +663,19 @@ export function PartInventoryForm({
     setIsNewPart(true);
     form.setValue("partDetailsId", "");
     form.setValue("partNo", searchTerm);
-    form.setValue("name", "");
-    form.setValue("alternatePartNumbers", "");
-    form.setValue("weight", 0);
-    form.setValue("length", 0);
-    form.setValue("width", 0);
-    form.setValue("height", 0);
-    form.setValue("costPrice", 0);
-    form.setValue("cars", []);
-    form.setValue("partTypes", []);
-    setSelectedCars([]);
-    setSelectedPartTypes([]);
+    if (mode.kind !== "duplicateInventory") {
+      form.setValue("name", "");
+      form.setValue("alternatePartNumbers", "");
+      form.setValue("weight", 0);
+      form.setValue("length", 0);
+      form.setValue("width", 0);
+      form.setValue("height", 0);
+      form.setValue("costPrice", 0);
+      form.setValue("cars", []);
+      form.setValue("partTypes", []);
+      setSelectedCars([]);
+      setSelectedPartTypes([]);
+    }
     setPartSearchOpen(false);
   };
 
@@ -1190,7 +1209,7 @@ export function PartInventoryForm({
                                   placeholder="Enter part number"
                                   {...field}
                                   value={field.value ?? ""}
-                                  disabled={!(isNewPart && (mode.kind === "addInventory" || mode.kind === "duplicateInventory"))}
+                                  disabled={mode.kind === "duplicateInventory" ? false : !(isNewPart && mode.kind === "addInventory")}
                                 />
                               </FormControl>
                               <FormMessage />
