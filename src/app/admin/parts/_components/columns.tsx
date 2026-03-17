@@ -30,11 +30,13 @@ export type UnifiedPartRow = PartDefinition & {
 
 type UnifiedColumnsProps = {
   onEditPart: (part: UnifiedPartRow) => void;
+  onDuplicatePart: (part: UnifiedPartRow) => void;
   onDeletePart: (part: UnifiedPartRow) => void;
 };
 
 export const getUnifiedPartColumns = ({
   onEditPart,
+  onDuplicatePart,
   onDeletePart,
 }: UnifiedColumnsProps): ColumnDef<UnifiedPartRow>[] => [
   {
@@ -238,6 +240,9 @@ export const getUnifiedPartColumns = ({
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={() => onEditPart(row.original)}>
             Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onDuplicatePart(row.original)}>
+            Duplicate
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onDeletePart(row.original)}>
             Delete

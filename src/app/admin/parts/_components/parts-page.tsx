@@ -50,6 +50,7 @@ const partsGlobalFilterFn: FilterFn<UnifiedPartRow> = (row, _columnId, value) =>
 export function PartsPage() {
   const [isAddPartOpen, setIsAddPartOpen] = useState(false);
   const [isEditPartOpen, setIsEditPartOpen] = useState(false);
+  const [isDuplicatePartOpen, setIsDuplicatePartOpen] = useState(false);
   const [isDeletePartOpen, setIsDeletePartOpen] = useState(false);
   const [selectedPart, setSelectedPart] = useState<UnifiedPartRow | null>(null);
 
@@ -137,6 +138,11 @@ export function PartsPage() {
     setIsEditPartOpen(true);
   };
 
+  const handleDuplicatePart = (part: UnifiedPartRow) => {
+    setSelectedPart(part);
+    setIsDuplicatePartOpen(true);
+  };
+
   const handleDeletePart = (part: UnifiedPartRow) => {
     setSelectedPart(part);
     setIsDeletePartOpen(true);
@@ -172,6 +178,7 @@ export function PartsPage() {
 
   const columns = getUnifiedPartColumns({
     onEditPart: handleEditPart,
+    onDuplicatePart: handleDuplicatePart,
     onDeletePart: handleDeletePart,
   });
 
@@ -226,6 +233,12 @@ export function PartsPage() {
             onOpenChange={setIsEditPartOpen}
             defaultValues={selectedPart}
             isEditing
+          />
+          <PartForm
+            open={isDuplicatePartOpen}
+            onOpenChange={setIsDuplicatePartOpen}
+            defaultValues={selectedPart}
+            isDuplicating
           />
           <DeletePartDialog
             open={isDeletePartOpen}

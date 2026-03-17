@@ -98,6 +98,7 @@ import {
 export type PartInventoryFormMode =
   | { kind: "addPart" }
   | { kind: "editPart"; defaults: PartDefaults }
+  | { kind: "duplicatePart"; defaults: PartDefaults }
   | { kind: "addInventory"; prefillPart?: { partNo: string; name?: string } }
   | { kind: "editInventory"; defaults: AdminInventoryItem }
   | { kind: "duplicateInventory"; defaults: AdminInventoryItem };
@@ -224,6 +225,11 @@ type FormValues = z.infer<typeof formSchema>;
 /** Whether mode includes inventory editing/creation. */
 function modeHasInventory(mode: PartInventoryFormMode): boolean {
   return mode.kind !== "editPart";
+}
+
+/** Whether mode is a "new part from scratch" flow (addPart or duplicatePart). */
+function modeIsNewPartFlow(mode: PartInventoryFormMode): boolean {
+  return mode.kind === "addPart" || mode.kind === "duplicatePart";
 }
 
 /** Whether mode needs the part-search popover (addInventory UX). */
@@ -485,7 +491,7 @@ export function PartInventoryForm({
 
   // Accordion expansion for new part creation
   useEffect(() => {
-    if (mode.kind === "addPart") {
+    if (modeIsNewPartFlow(mode)) {
       if (existingPartSelected) {
         setAccordionValue(["part-info", "inventory-info"]);
       } else if (shouldCreateInventory) {
@@ -498,7 +504,7 @@ export function PartInventoryForm({
     } else {
       setAccordionValue(["inventory-info"]);
     }
-  }, [isNewPart, mode.kind, existingPartSelected, shouldCreateInventory]);
+  }, [isNewPart, mode, existingPartSelected, shouldCreateInventory]);
 
   // duplicateInventory: auto-toggle isNewPart when partNo diverges from original
   useEffect(() => {
@@ -565,8 +571,8 @@ export function PartInventoryForm({
     const defaults = getFormDefaults(mode);
     form.reset(defaults);
 
-    // Pre-populate cars/partTypes for editPart
-    if (mode.kind === "editPart") {
+    // Pre-populate cars/partTypes for editPart / duplicatePart
+    if (mode.kind === "editPart" || mode.kind === "duplicatePart") {
       const carIds = mode.defaults.cars.map((c) => c.id);
       const typeIds = mode.defaults.partTypes.map((t) => t.id);
       setSelectedCars(carIds);
@@ -725,8 +731,8 @@ export function PartInventoryForm({
         order: index,
       }));
 
-      // ── addPart mode ──────────────────────────────────────
-      if (mode.kind === "addPart") {
+      // ── addPart / duplicatePart mode ──────────────────────
+      if (modeIsNewPartFlow(mode)) {
         if (existingPartSelected) {
           // Existing part selected — skip part creation, create inventory
           const inventoryResult = await createInventoryMutation.mutateAsync({
@@ -1002,6 +1008,8 @@ export function PartInventoryForm({
         return existingPartSelected ? "Add Inventory" : "Add New Part";
       case "editPart":
         return "Edit Part";
+      case "duplicatePart":
+        return "Duplicate Part";
       case "addInventory":
         return "Add New Inventory Item";
       case "editInventory":
@@ -1023,10 +1031,9 @@ export function PartInventoryForm({
     }
   })();
 
-  const showInventorySection =
-    mode.kind === "addPart"
-      ? existingPartSelected || shouldCreateInventory
-      : modeHasInventory(mode);
+  const showInventorySection = modeIsNewPartFlow(mode)
+    ? existingPartSelected || shouldCreateInventory
+    : modeHasInventory(mode);
 
   const partFieldsReadOnly =
     mode.kind === "addPart" ? existingPartSelected : false;
@@ -1209,7 +1216,7 @@ export function PartInventoryForm({
                                   placeholder="Enter part number"
                                   {...field}
                                   value={field.value ?? ""}
-                                  disabled={mode.kind === "duplicateInventory" ? false : !(isNewPart && mode.kind === "addInventory")}
+                                  disabled={mode.kind === "duplicateInventory" || mode.kind === "duplicatePart" ? false : !(isNewPart && mode.kind === "addInventory")}
                                 />
                               </FormControl>
                               <FormMessage />
@@ -1509,8 +1516,8 @@ export function PartInventoryForm({
                       Inventory Information
                     </AccordionTrigger>
                     <AccordionContent className="space-y-4">
-                      {/* addPart mode: checkbox gate */}
-                      {mode.kind === "addPart" && !existingPartSelected && (
+                      {/* addPart/duplicatePart: checkbox gate */}
+                      {modeIsNewPartFlow(mode) && !existingPartSelected && (
                         <FormField
                           control={form.control}
                           name="createInventory"
@@ -1548,11 +1555,12 @@ export function PartInventoryForm({
                                     ...donorOptions,
                                   ]}
                                   value={field.value ?? "none"}
-                                  onChange={(value) =>
-                                    field.onChange(
-                                      value === "none" ? null : value,
-                                    )
-                                  }
+                                  onChange={(value) => {
+                                    const vin =
+                                      value === "none" ? null : value;
+                                    field.onChange(vin);
+                                    persistDonorVin(vin);
+                                  }}
                                   placeholder="Select a donor car (optional)"
                                   searchPlaceholder="Search donor cars..."
                                   disabled={isSubmitting}
@@ -1769,7 +1777,7 @@ export function PartInventoryForm({
                                 partImages.length > 0 &&
                                 !isNewPart &&
                                 !(
-                                  mode.kind === "addPart" &&
+                                  modeIsNewPartFlow(mode) &&
                                   !existingPartSelected
                                 ) && (
                                   <PartImageLibrary
@@ -2174,6 +2182,22 @@ function PartImageLibrary({
 
 // ── Utility functions ────────────────────────────────────────
 
+const DONOR_VIN_SESSION_KEY = "partForm_lastDonorVin";
+
+function getPersistedDonorVin(): string | null {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem(DONOR_VIN_SESSION_KEY);
+}
+
+function persistDonorVin(vin: string | null): void {
+  if (typeof window === "undefined") return;
+  if (vin) {
+    sessionStorage.setItem(DONOR_VIN_SESSION_KEY, vin);
+  } else {
+    sessionStorage.removeItem(DONOR_VIN_SESSION_KEY);
+  }
+}
+
 function getFormDefaults(mode: PartInventoryFormMode): FormValues {
   switch (mode.kind) {
     case "addPart":
@@ -2190,7 +2214,7 @@ function getFormDefaults(mode: PartInventoryFormMode): FormValues {
         partTypes: [],
         createInventory: true,
         isNewPart: false,
-        donorVin: null,
+        donorVin: getPersistedDonorVin(),
         inventoryLocationId: null,
         variant: null,
         status: "AVAILABLE",
@@ -2211,7 +2235,28 @@ function getFormDefaults(mode: PartInventoryFormMode): FormValues {
         partTypes: mode.defaults.partTypes.map((t) => t.id),
         createInventory: false,
         isNewPart: false,
-        donorVin: null,
+        donorVin: getPersistedDonorVin(),
+        inventoryLocationId: null,
+        variant: null,
+        status: "AVAILABLE",
+        count: 1,
+        images: [],
+      };
+    case "duplicatePart":
+      return {
+        partNo: mode.defaults.partNo,
+        alternatePartNumbers: mode.defaults.alternatePartNumbers ?? "",
+        name: mode.defaults.name,
+        weight: mode.defaults.weight,
+        length: mode.defaults.length,
+        width: mode.defaults.width,
+        height: mode.defaults.height,
+        costPrice: mode.defaults.costPrice ?? 0,
+        cars: mode.defaults.cars.map((c) => c.id),
+        partTypes: mode.defaults.partTypes.map((t) => t.id),
+        createInventory: false,
+        isNewPart: false,
+        donorVin: getPersistedDonorVin(),
         inventoryLocationId: null,
         variant: null,
         status: "AVAILABLE",
@@ -2233,7 +2278,7 @@ function getFormDefaults(mode: PartInventoryFormMode): FormValues {
         cars: [],
         partTypes: [],
         createInventory: false,
-        donorVin: null,
+        donorVin: getPersistedDonorVin(),
         inventoryLocationId: null,
         variant: null,
         status: "AVAILABLE",
