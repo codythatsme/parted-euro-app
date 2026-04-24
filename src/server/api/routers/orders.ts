@@ -1,4 +1,5 @@
 import { z } from "zod";
+import * as Sentry from "@sentry/nextjs";
 import { createTRPCRouter, publicProcedure, adminProcedure } from "../trpc";
 import {
   sendOrderReadyForPickupEmail,
@@ -106,39 +107,56 @@ export const ordersRouter = createTRPCRouter({
         carrier: z.string().optional(),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      // Update the order with tracking information
-      const updatedOrder = await ctx.db.order.update({
-        where: { id: input.orderId },
-        data: {
-          trackingNumber: input.trackingNumber,
-          carrier: input.carrier,
-          // If adding tracking, typically this means it's been shipped
-          status: "SHIPPED",
+    .mutation(async ({ ctx, input }) =>
+      Sentry.startSpan(
+        {
+          name: "orders.updateTracking",
+          op: "function",
+          attributes: {
+            orderId: input.orderId,
+            carrier: input.carrier ?? "unknown",
+          },
         },
-        include: {
-          orderItems: {
+        async () => {
+          const updatedOrder = await ctx.db.order.update({
+            where: { id: input.orderId },
+            data: {
+              trackingNumber: input.trackingNumber,
+              carrier: input.carrier,
+              // If adding tracking, typically this means it's been shipped
+              status: "SHIPPED",
+            },
             include: {
-              listing: {
+              orderItems: {
                 include: {
-                  images: {
-                    orderBy: {
-                      order: "asc",
+                  listing: {
+                    include: {
+                      images: {
+                        orderBy: {
+                          order: "asc",
+                        },
+                        take: 1,
+                      },
                     },
-                    take: 1,
                   },
                 },
               },
             },
-          },
+          });
+
+          void Sentry.startSpan(
+            {
+              name: "resend.sendOrderShippedEmail",
+              op: "http.client",
+              attributes: { orderId: input.orderId },
+            },
+            async () => sendOrderShippedEmail(updatedOrder),
+          );
+
+          return updatedOrder;
         },
-      });
-
-      // Send shipping email notification
-      void sendOrderShippedEmail(updatedOrder);
-
-      return updatedOrder;
-    }),
+      ),
+    ),
 
   updateStatus: adminProcedure
     .input(
@@ -147,40 +165,61 @@ export const ordersRouter = createTRPCRouter({
         status: z.string(),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      // Update the order status
-      const updatedOrder = await ctx.db.order.update({
-        where: { id: input.orderId },
-        data: {
-          status: input.status,
+    .mutation(async ({ ctx, input }) =>
+      Sentry.startSpan(
+        {
+          name: "orders.updateStatus",
+          op: "function",
+          attributes: { orderId: input.orderId, newStatus: input.status },
         },
-        include: {
-          orderItems: {
+        async () => {
+          const updatedOrder = await ctx.db.order.update({
+            where: { id: input.orderId },
+            data: {
+              status: input.status,
+            },
             include: {
-              listing: {
+              orderItems: {
                 include: {
-                  images: {
-                    orderBy: {
-                      order: "asc",
+                  listing: {
+                    include: {
+                      images: {
+                        orderBy: {
+                          order: "asc",
+                        },
+                        take: 1,
+                      },
                     },
-                    take: 1,
                   },
                 },
               },
             },
-          },
+          });
+
+          if (input.status === "Ready for pickup") {
+            void Sentry.startSpan(
+              {
+                name: "resend.sendOrderReadyForPickupEmail",
+                op: "http.client",
+                attributes: { orderId: input.orderId },
+              },
+              async () => sendOrderReadyForPickupEmail(updatedOrder),
+            );
+          } else if (input.status === "SHIPPED") {
+            void Sentry.startSpan(
+              {
+                name: "resend.sendOrderShippedEmail",
+                op: "http.client",
+                attributes: { orderId: input.orderId },
+              },
+              async () => sendOrderShippedEmail(updatedOrder),
+            );
+          }
+
+          return updatedOrder;
         },
-      });
-
-      // Send appropriate email based on status
-      if (input.status === "Ready for pickup") {
-        void sendOrderReadyForPickupEmail(updatedOrder);
-      } else if (input.status === "SHIPPED") {
-        void sendOrderShippedEmail(updatedOrder);
-      }
-
-      return updatedOrder;
-    }),
+      ),
+    ),
 
   refreshAddressFromStripe: adminProcedure
     .input(
@@ -188,50 +227,69 @@ export const ordersRouter = createTRPCRouter({
         orderId: z.string(),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      // Get the order with the Stripe checkout session ID
-      const order = await ctx.db.order.findUnique({
-        where: { id: input.orderId },
-        select: { stripeCheckoutSessionId: true },
-      });
+    .mutation(async ({ ctx, input }) =>
+      Sentry.startSpan(
+        {
+          name: "orders.refreshAddress",
+          op: "function",
+          attributes: { orderId: input.orderId },
+        },
+        async (rootSpan) => {
+          const order = await ctx.db.order.findUnique({
+            where: { id: input.orderId },
+            select: { stripeCheckoutSessionId: true },
+          });
 
-      if (!order?.stripeCheckoutSessionId) {
-        throw new Error("No Stripe checkout session ID found for this order");
-      }
+          if (!order?.stripeCheckoutSessionId) {
+            throw new Error(
+              "No Stripe checkout session ID found for this order",
+            );
+          }
 
-      try {
-        // Fetch the checkout session from Stripe
-        const session = await stripe.checkout.sessions.retrieve(
-          order.stripeCheckoutSessionId,
-        );
+          const stripeSessionId = order.stripeCheckoutSessionId;
+          rootSpan.setAttribute("stripeSessionId", stripeSessionId);
 
-        console.dir(session, { depth: null, colors: true });
+          try {
+            const session = await Sentry.startSpan(
+              {
+                name: "stripe.checkout.sessions.retrieve",
+                op: "http.client",
+                attributes: {
+                  orderId: input.orderId,
+                  stripeSessionId,
+                },
+              },
+              async () => stripe.checkout.sessions.retrieve(stripeSessionId),
+            );
 
-        if (!session.shipping_details?.address) {
-          throw new Error("No address found in Stripe checkout session");
-        }
+            console.dir(session, { depth: null, colors: true });
 
-        // Update the order with the fresh address data from Stripe
-        const updatedOrder = await ctx.db.order.update({
-          where: { id: input.orderId },
-          data: {
-            shippingLine1: session.shipping_details.address.line1,
-            shippingLine2: session.shipping_details.address.line2,
-            shippingCity: session.shipping_details.address.city,
-            shippingPostcode: session.shipping_details.address.postal_code,
-            shippingCountry: session.shipping_details.address.country,
-            shippingState: session.shipping_details.address.state,
-            shippingAddress: `${session.shipping_details.address.line1}, ${
-              session.shipping_details.address.line2 ?? " "
-            }, ${session.shipping_details.address.city}, ${session.shipping_details.address.postal_code}, ${session.shipping_details.address.country}`,
-          },
-        });
+            if (!session.shipping_details?.address) {
+              throw new Error("No address found in Stripe checkout session");
+            }
 
-        return updatedOrder;
-      } catch (error) {
-        throw new Error(
-          `Failed to refresh address from Stripe: ${error instanceof Error ? error.message : "Unknown error"}`,
-        );
-      }
-    }),
+            const updatedOrder = await ctx.db.order.update({
+              where: { id: input.orderId },
+              data: {
+                shippingLine1: session.shipping_details.address.line1,
+                shippingLine2: session.shipping_details.address.line2,
+                shippingCity: session.shipping_details.address.city,
+                shippingPostcode: session.shipping_details.address.postal_code,
+                shippingCountry: session.shipping_details.address.country,
+                shippingState: session.shipping_details.address.state,
+                shippingAddress: `${session.shipping_details.address.line1}, ${
+                  session.shipping_details.address.line2 ?? " "
+                }, ${session.shipping_details.address.city}, ${session.shipping_details.address.postal_code}, ${session.shipping_details.address.country}`,
+              },
+            });
+
+            return updatedOrder;
+          } catch (error) {
+            throw new Error(
+              `Failed to refresh address from Stripe: ${error instanceof Error ? error.message : "Unknown error"}`,
+            );
+          }
+        },
+      ),
+    ),
 });
