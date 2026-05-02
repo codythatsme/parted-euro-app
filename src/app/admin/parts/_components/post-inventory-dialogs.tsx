@@ -24,7 +24,6 @@ import {
 import { VirtualizedCombobox } from "~/components/ui/virtualized-combobox";
 import { usePendingOrder } from "~/components/pending-order-provider";
 import { api } from "~/trpc/react";
-import { ListingForm } from "~/app/admin/listings/_components/listing-form";
 
 // ── Shared types ─────────────────────────────────────────────
 
@@ -51,12 +50,6 @@ type PendingListingAssignment = {
   candidateListings: ListingAssignmentCandidate[];
 };
 
-type PendingListingCreate = {
-  partNo: string;
-  partName: string;
-  createdPartIds: string[];
-};
-
 type SoldPartPrompt = {
   partIds: string[];
   description: string;
@@ -73,8 +66,7 @@ type UsePostInventoryDialogsOpts = {
 /**
  * Encapsulates the post-inventory-creation dialog cascade:
  * 1. Listing assignment selection (multiple candidate listings)
- * 2. "No listing found" prompt → optional inline ListingForm
- * 3. Sold-to-pending-order prompt
+ * 2. Sold-to-pending-order prompt
  *
  * Returns `handleResult` to kick off the cascade after inventory
  * creation, and `dialogElements` to render in JSX.
@@ -85,9 +77,6 @@ export function usePostInventoryDialogs({
   const [pendingListingAssignment, setPendingListingAssignment] =
     useState<PendingListingAssignment | null>(null);
   const [selectedListingId, setSelectedListingId] = useState("");
-  const [pendingListingCreate, setPendingListingCreate] =
-    useState<PendingListingCreate | null>(null);
-  const [showListingForm, setShowListingForm] = useState(false);
   const [soldPartPrompt, setSoldPartPrompt] = useState<SoldPartPrompt | null>(
     null,
   );
@@ -140,11 +129,6 @@ export function usePostInventoryDialogs({
     }
 
     if (result.assignment.noCandidates) {
-      setPendingListingCreate({
-        partNo,
-        partName,
-        createdPartIds: result.assignment.createdPartIds,
-      });
       toast.success("Inventory item created");
       return { keepOpen: false };
     }
@@ -265,58 +249,6 @@ export function usePostInventoryDialogs({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* No listing found prompt */}
-      <Dialog
-        open={!!pendingListingCreate && !showListingForm}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) setPendingListingCreate(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>No Listing Found</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            No listing exists for{" "}
-            <span className="font-medium text-foreground">
-              {pendingListingCreate?.partNo}
-            </span>
-            . Would you like to create one now?
-          </p>
-          <DialogFooter className="pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPendingListingCreate(null)}
-            >
-              No
-            </Button>
-            <Button type="button" onClick={() => setShowListingForm(true)}>
-              Create Listing
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Inline listing form */}
-      {showListingForm && pendingListingCreate && (
-        <ListingForm
-          open={showListingForm}
-          onOpenChange={(nextOpen) => {
-            if (!nextOpen) {
-              setShowListingForm(false);
-              invalidate(pendingListingCreate.partNo);
-              setPendingListingCreate(null);
-            }
-          }}
-          initialPart={{
-            ids: pendingListingCreate.createdPartIds,
-            name: pendingListingCreate.partName,
-            partNo: pendingListingCreate.partNo,
-          }}
-        />
-      )}
 
       {/* Sold-to-pending-order prompt */}
       <AlertDialog
