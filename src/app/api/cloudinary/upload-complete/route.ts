@@ -4,7 +4,13 @@ import { db } from "~/server/db";
 import { z } from "zod";
 
 const requestSchema = z.object({
-  endpoint: z.enum(["homepageImage", "inventoryImage", "partImage", "donorImage"]),
+  endpoint: z.enum([
+    "homepageImage",
+    "inventoryImage",
+    "partImage",
+    "donorImage",
+    "contactImage",
+  ]),
   url: z.string().url(),
   publicId: z.string().optional(),
   metadata: z
@@ -122,6 +128,11 @@ export async function POST(request: Request) {
 
       case "donorImage": {
         // No database operation for donor images - just return the URL
+        return NextResponse.json({ url });
+      }
+
+      case "contactImage": {
+        // Caller (admin contact form) persists the URL via the pages.contact.update mutation.
         return NextResponse.json({ url });
       }
 

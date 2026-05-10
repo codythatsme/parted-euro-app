@@ -13,7 +13,8 @@ export type UploadEndpoint =
   | "homepageImage"
   | "inventoryImage"
   | "partImage"
-  | "donorImage";
+  | "donorImage"
+  | "contactImage";
 
 // Get folder path based on endpoint type
 export function getFolderPath(endpoint: UploadEndpoint): string {

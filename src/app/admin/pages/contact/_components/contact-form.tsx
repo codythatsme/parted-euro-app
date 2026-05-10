@@ -1,7 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Trash2 } from "lucide-react";
+import Compressor from "compressorjs";
+import { Eye, ImageOff, Plus, Trash2 } from "lucide-react";
 import { useEffect } from "react";
 import {
   type Control,
@@ -11,9 +12,17 @@ import {
 } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { UploadDropzone } from "~/components/CloudinaryUpload";
 import { ContactCard, type ContactCardData } from "~/components/contact-card";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "~/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -37,6 +46,11 @@ const formSchema = z.object({
     .string()
     .regex(/^tel:/, 'Must start with "tel:" (e.g. tel:+61431133764)'),
   email: z.string().email("Must be a valid email"),
+  heroImageUrl: z
+    .string()
+    .url("Must be a valid URL")
+    .nullable()
+    .or(z.literal("").transform(() => null)),
   businessHoursTitle: z.string().min(1, "Required").max(120),
   businessHoursNote: z.string().max(200),
   businessHoursLines: z
@@ -54,6 +68,7 @@ type Initial = {
   phoneDisplay: string;
   phoneHref: string;
   email: string;
+  heroImageUrl: string | null;
   businessHoursTitle: string;
   businessHoursNote: string | null;
   businessHoursLines: string[];
@@ -72,6 +87,7 @@ export function ContactForm({ initial }: { initial: Initial }) {
       phoneDisplay: initial.phoneDisplay,
       phoneHref: initial.phoneHref,
       email: initial.email,
+      heroImageUrl: initial.heroImageUrl,
       businessHoursTitle: initial.businessHoursTitle,
       businessHoursNote: initial.businessHoursNote ?? "",
       businessHoursLines: initial.businessHoursLines.map((value) => ({ value })),
@@ -100,6 +116,7 @@ export function ContactForm({ initial }: { initial: Initial }) {
       phoneDisplay: initial.phoneDisplay,
       phoneHref: initial.phoneHref,
       email: initial.email,
+      heroImageUrl: initial.heroImageUrl,
       businessHoursTitle: initial.businessHoursTitle,
       businessHoursNote: initial.businessHoursNote ?? "",
       businessHoursLines: initial.businessHoursLines.map((value) => ({ value })),
@@ -115,6 +132,7 @@ export function ContactForm({ initial }: { initial: Initial }) {
       phoneDisplay: values.phoneDisplay,
       phoneHref: values.phoneHref,
       email: values.email,
+      heroImageUrl: values.heroImageUrl,
       businessHoursTitle: values.businessHoursTitle,
       businessHoursNote: values.businessHoursNote.trim() || null,
       businessHoursLines: values.businessHoursLines.map((l) => l.value),
@@ -123,8 +141,7 @@ export function ContactForm({ initial }: { initial: Initial }) {
 
   return (
     <Form {...form}>
-      <div className="grid gap-8 lg:grid-cols-2">
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>Header</CardTitle>
@@ -152,6 +169,34 @@ export function ContactForm({ initial }: { initial: Initial }) {
                   <FormControl>
                     <Input {...field} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Hero image</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <FormField
+              control={form.control}
+              name="heroImageUrl"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Background image</FormLabel>
+                  <FormControl>
+                    <HeroImageField
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Shown behind the page heading. Falls back to a dark
+                    gradient when empty.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -331,6 +376,7 @@ export function ContactForm({ initial }: { initial: Initial }) {
         </Card>
 
         <div className="flex justify-end gap-2">
+          <PreviewDialog control={form.control} />
           <Button
             type="button"
             variant="outline"
@@ -346,14 +392,12 @@ export function ContactForm({ initial }: { initial: Initial }) {
             {update.isPending ? "Saving..." : "Save"}
           </Button>
         </div>
-        </form>
-        <ContactPreview control={form.control} />
-      </div>
+      </form>
     </Form>
   );
 }
 
-function ContactPreview({ control }: { control: Control<FormValues> }) {
+function PreviewDialog({ control }: { control: Control<FormValues> }) {
   const v = useWatch({ control });
 
   const data: ContactCardData = {
@@ -364,6 +408,7 @@ function ContactPreview({ control }: { control: Control<FormValues> }) {
     phoneDisplay: v.phoneDisplay ?? "",
     phoneHref: v.phoneHref ?? "",
     email: v.email ?? "",
+    heroImageUrl: v.heroImageUrl ?? null,
     businessHoursTitle: v.businessHoursTitle ?? "",
     businessHoursNote: v.businessHoursNote?.trim() ? v.businessHoursNote : null,
     businessHoursLines: (v.businessHoursLines ?? [])
@@ -372,10 +417,91 @@ function ContactPreview({ control }: { control: Control<FormValues> }) {
   };
 
   return (
-    <div className="lg:sticky lg:top-20 lg:self-start">
-      <div className="rounded-lg border bg-gradient-to-b from-background to-muted px-4 py-8 shadow-sm">
-        <ContactCard data={data} />
-      </div>
-    </div>
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline">
+          <Eye className="mr-2 h-4 w-4" /> Preview
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Preview</DialogTitle>
+        </DialogHeader>
+        <div className="rounded-lg bg-gradient-to-b from-background to-muted p-4 sm:p-6">
+          <ContactCard data={data} />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
+}
+
+function HeroImageField({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (url: string | null) => void;
+}) {
+  if (value) {
+    return (
+      <div className="space-y-3">
+        <div className="overflow-hidden rounded-md border">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={value}
+            alt="Hero preview"
+            className="h-48 w-full object-cover"
+          />
+        </div>
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onChange(null)}
+          >
+            <ImageOff className="mr-2 h-4 w-4" /> Remove
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <UploadDropzone
+      endpoint="contactImage"
+      config={{ mode: "auto" }}
+      onBeforeUploadBegin={(files) =>
+        Promise.all(files.map((file) => compressImage(file)))
+      }
+      onClientUploadComplete={(res) => {
+        const url = res?.[0]?.url;
+        if (url) {
+          onChange(url);
+          toast.success("Hero image uploaded");
+        }
+      }}
+      onUploadError={(err) => toast.error(`Upload failed: ${err.message}`)}
+    />
+  );
+}
+
+function compressImage(file: File): Promise<File> {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith("image/")) {
+      resolve(file);
+      return;
+    }
+    new Compressor(file, {
+      quality: 0.85,
+      maxWidth: 2400,
+      maxHeight: 1400,
+      convertSize: 1_000_000,
+      success: (compressed) =>
+        resolve(
+          new File([compressed], file.name, { type: compressed.type }),
+        ),
+      error: () => resolve(file),
+    });
+  });
 }

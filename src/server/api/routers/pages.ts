@@ -16,6 +16,7 @@ const contactInputSchema = z.object({
   phoneDisplay: z.string().min(1).max(40),
   phoneHref: z.string().regex(/^tel:/, 'phoneHref must start with "tel:"'),
   email: z.string().email(),
+  heroImageUrl: z.string().url().nullable(),
   businessHoursTitle: z.string().min(1).max(120),
   businessHoursNote: z.string().max(200).nullable(),
   businessHoursLines: z.array(z.string().min(1).max(200)).max(20),

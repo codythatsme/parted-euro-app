@@ -1,9 +1,18 @@
 "use client";
 
+import { ExternalLink, Eye } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { TiptapRender } from "~/components/tiptap-render";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { tiptapDocSchema, type TiptapDoc } from "~/lib/tiptap-schema";
@@ -87,7 +96,13 @@ export function WarrantyForm({ initial }: { initial: Initial }) {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button asChild type="button" variant="ghost">
+          <a href="/warranty" target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="mr-2 h-4 w-4" /> View live page
+          </a>
+        </Button>
+        <PreviewDialog title={title} body={body} />
         <Button
           type="button"
           variant="outline"
@@ -108,5 +123,32 @@ export function WarrantyForm({ initial }: { initial: Initial }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+function PreviewDialog({ title, body }: { title: string; body: TiptapDoc }) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline">
+          <Eye className="mr-2 h-4 w-4" /> Preview
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Preview</DialogTitle>
+        </DialogHeader>
+        <div className="rounded-lg bg-gradient-to-b from-background to-muted p-6">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+              {title || " "}
+            </h1>
+          </div>
+          <div className="mt-10">
+            <TiptapRender doc={body} />
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

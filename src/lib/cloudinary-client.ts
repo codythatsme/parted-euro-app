@@ -3,7 +3,8 @@ export type UploadEndpoint =
   | "homepageImage"
   | "inventoryImage"
   | "partImage"
-  | "donorImage";
+  | "donorImage"
+  | "contactImage";
 
 export type UploadMetadata = {
   partNo?: string;

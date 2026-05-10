@@ -337,6 +337,7 @@ model ContactPage {
   phoneDisplay       String
   phoneHref          String
   email              String
+  heroImageUrl       String?
   businessHoursTitle String
   businessHoursNote  String?
   businessHoursLines String[]

@@ -9,6 +9,7 @@ export const defaultContactPage = {
   phoneDisplay: "0431 133 764",
   phoneHref: "tel:+61431133764",
   email: "contact@partedeuro.com.au",
+  heroImageUrl: null as string | null,
   businessHoursTitle: "Business Hours",
   businessHoursNote: "(Via appointment only)",
   businessHoursLines: ["Monday to Friday"],
