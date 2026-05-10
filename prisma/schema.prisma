@@ -326,3 +326,27 @@ model EbaySettings {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+/// Singleton: structured Contact page content. Always one row, id="singleton".
+model ContactPage {
+  id                 String   @id @default("singleton")
+  heading            String
+  cardTitle          String
+  address            String
+  mapsUrl            String
+  phoneDisplay       String
+  phoneHref          String
+  email              String
+  businessHoursTitle String
+  businessHoursNote  String?
+  businessHoursLines String[]
+  updatedAt          DateTime @updatedAt
+}
+
+/// Singleton: rich-body Warranty page content. Body is Tiptap JSON, validated against the constrained schema in src/lib/tiptap-schema.ts.
+model WarrantyPage {
+  id        String   @id @default("singleton")
+  title     String
+  body      Json
+  updatedAt DateTime @updatedAt
+}

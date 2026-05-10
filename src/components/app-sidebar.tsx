@@ -12,6 +12,7 @@ import {
   Users,
   Settings2,
   CarFrontIcon,
+  FileText,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 
@@ -93,6 +94,24 @@ export function AppSidebar({
       url: "/admin/users",
       icon: Users,
       isActive: pathname.startsWith("/admin/users"),
+    },
+    {
+      title: "Pages",
+      url: "/admin/pages",
+      icon: FileText,
+      isActive: pathname.startsWith("/admin/pages"),
+      items: [
+        {
+          title: "Contact",
+          url: "/admin/pages/contact",
+          isActive: pathname === "/admin/pages/contact",
+        },
+        {
+          title: "Warranty",
+          url: "/admin/pages/warranty",
+          isActive: pathname === "/admin/pages/warranty",
+        },
+      ],
     },
     {
       title: "Settings",

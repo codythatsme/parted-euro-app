@@ -48,7 +48,7 @@ const Nav = () => {
           </Link>
           <Link
             prefetch={true}
-            href="/returns-refunds"
+            href="/warranty"
             className={cn(
               buttonVariants({ variant: "ghost", size: "sm" }),
               "text-foreground hover:bg-primary hover:text-primary-foreground",

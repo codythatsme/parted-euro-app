@@ -19,7 +19,7 @@ import { api } from "~/trpc/react";
 const navLinks = [
   { href: "/listings", label: "Browse Store", icon: Home },
   { href: "/wrecking", label: "Cars Wrecking Now", icon: CarFront },
-  { href: "/returns-refunds", label: "Warranty & Return Policy", icon: Shield },
+  { href: "/warranty", label: "Warranty & Return Policy", icon: Shield },
   { href: "/contact", label: "Contact", icon: PhoneCall },
 ];
 

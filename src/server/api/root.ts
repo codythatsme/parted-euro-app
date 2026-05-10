@@ -16,6 +16,7 @@ import { inventoryRouter } from "./routers/inventory";
 import { analyticsRouter } from "./routers/analytics";
 import { ebayRouter } from "./routers/ebay";
 import { xeroRouter } from "./routers/xero";
+import { pagesRouter } from "./routers/pages";
 /**
  * This is the primary router for your server.
  *
@@ -39,6 +40,7 @@ export const appRouter = createTRPCRouter({
   analytics: analyticsRouter,
   ebay: ebayRouter,
   xero: xeroRouter,
+  pages: pagesRouter,
 });
 
 // export type definition of API

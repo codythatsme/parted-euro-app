@@ -1,0 +1,3 @@
+# Targeted page editors over a generic CMS
+
+Contact and Warranty are the only hardcoded content pages with current admin-editing demand, and they have very different shapes (Contact = structured fields with `tel:`/`mailto:` links and an embedded map; Warranty = long-form prose with design-system callouts). We chose two purpose-built admin sections with tailored editors over a generic `Page { slug, title, body }` table because the structural mismatch is large enough that any unifying schema would either over-constrain Contact (forcing field-level data into a rich blob) or under-constrain Warranty (denying it the structured affordances it actually needs). If a third or fourth editable page emerges, migrating to a generic model is a straightforward additive change.

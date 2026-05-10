@@ -20,6 +20,15 @@ const config = {
   images: {
     domains: ["res.cloudinary.com", "utfs.io"],
   },
+  async redirects() {
+    return [
+      {
+        source: "/returns-refunds",
+        destination: "/warranty",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default withSentryConfig(config, {
