@@ -42,6 +42,7 @@ import {
 } from "~/components/ui/pagination";
 import { SelectCarModal } from "~/components/SelectCarModal";
 import { Link } from "~/components/link";
+import { useSelectedCarStore } from "~/stores/useSelectedCarStore";
 
 export default function ListingsPage() {
   // URL State Management
@@ -61,18 +62,16 @@ export default function ListingsPage() {
   const [subcat, setSubcat] = useQueryState("subcat", {
     defaultValue: "",
   });
-  const [generation, setGeneration] = useQueryState("generation", {
-    defaultValue: "",
-  });
-  const [model, setModel] = useQueryState("model", {
-    defaultValue: "",
-  });
-  const [series, setSeries] = useQueryState("series", {
-    defaultValue: "",
-  });
-  const [make, setMake] = useQueryState("make", {
-    defaultValue: "",
-  });
+
+  // Selected car comes from the shared zustand store so the same selection is
+  // available on the listing detail page for the "You may also like" section.
+  const selectedCar = useSelectedCarStore((s) => s.selectedCar);
+  const setSelectedCar = useSelectedCarStore((s) => s.setSelectedCar);
+  const clearSelectedCar = useSelectedCarStore((s) => s.clearSelectedCar);
+  const make = selectedCar?.make ?? "";
+  const series = selectedCar?.series ?? "";
+  const generation = selectedCar?.generation ?? "";
+  const model = selectedCar?.model ?? "";
 
   // Local state
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -164,10 +163,7 @@ export default function ListingsPage() {
   const clearFilters = () => {
     void setCategory("");
     void setSubcat("");
-    void setGeneration("");
-    void setModel("");
-    void setSeries("");
-    void setMake("");
+    clearSelectedCar();
     void setPage(1);
   };
 
@@ -187,11 +183,7 @@ export default function ListingsPage() {
     generation?: string;
     model?: string;
   }) => {
-    // Only set URL parameters for values that are provided
-    void setMake(carData.make);
-    void setGeneration(carData.generation ?? "");
-    void setModel(carData.model ?? "");
-    void setSeries(carData.series ?? "");
+    setSelectedCar(carData);
     void setPage(1);
   };
 
@@ -459,12 +451,7 @@ export default function ListingsPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onMouseDown={() => {
-                      void setMake("");
-                      void setGeneration("");
-                      void setModel("");
-                      void setSeries("");
-                    }}
+                    onMouseDown={() => clearSelectedCar()}
                     className="h-4 w-4 p-0"
                   >
                     <X className="h-3 w-3" />
@@ -702,12 +689,7 @@ export default function ListingsPage() {
                 variant="ghost"
                 size="sm"
                 className="mt-2 w-full text-destructive"
-                onMouseDown={() => {
-                  void setMake("");
-                  void setGeneration("");
-                  void setModel("");
-                  void setSeries("");
-                }}
+                onMouseDown={() => clearSelectedCar()}
               >
                 <X className="mr-1 h-3 w-3" />
                 Clear Car Selection

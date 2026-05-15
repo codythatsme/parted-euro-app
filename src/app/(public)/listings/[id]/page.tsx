@@ -6,25 +6,15 @@ import { Separator } from "~/components/ui/separator";
 import { Badge } from "~/components/ui/badge";
 import { AddToCart } from "./add-to-cart";
 import { InteractiveCompatibleCars } from "./interactive-compatible-cars";
-import { RelatedListings } from "./related-listings";
+import { RelatedListingsSection } from "./related-listings-section";
 import { ListingAnalytics } from "./listing-analytics";
 import { ProductGallery } from "~/components/product-gallery";
 
 type Props = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{
-    make?: string;
-    series?: string;
-    generation?: string;
-    model?: string;
-  }>;
 };
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}): Promise<Metadata> {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // read route params
   const { id } = await params;
 
@@ -47,9 +37,8 @@ export async function generateMetadata({
   };
 }
 
-export default async function ListingPage({ params, searchParams }: Props) {
+export default async function ListingPage({ params }: Props) {
   const { id } = await params;
-  const sp = await searchParams;
   const listing = await api.listings.getListing({ id });
 
   if (!listing) {
@@ -84,18 +73,14 @@ export default async function ListingPage({ params, searchParams }: Props) {
     (car, index, self) => index === self.findIndex((c) => c.id === car.id),
   );
 
-  // Prefer the car the user selected on the listings screen (passed via URL).
-  // Fall back to the first compatible car on the listing.
+  // The "You may also like" section is rendered by a client component that
+  // prefers the car selected on the listings screen (from the zustand store)
+  // and falls back to this listing's first compatible car.
   const firstCar = uniqueCompatibleCars[0];
-  const selectedCar =
-    sp.generation && sp.model
-      ? { generation: sp.generation, model: sp.model }
-      : null;
-  const relatedListings = await api.listings.getRelatedListings({
-    id,
-    generation: selectedCar?.generation ?? firstCar?.generation ?? "",
-    model: selectedCar?.model ?? firstCar?.model ?? "",
-  });
+  const fallbackCar = {
+    generation: firstCar?.generation ?? "",
+    model: firstCar?.model ?? "",
+  };
 
   return (
     <div className="container mx-auto px-4 py-8 md:py-12">
@@ -214,11 +199,9 @@ export default async function ListingPage({ params, searchParams }: Props) {
 
       <Separator className="my-8" />
 
-      {relatedListings.length > 0 && (
-        <div className="mt-8">
-          <RelatedListings listings={relatedListings} />
-        </div>
-      )}
+      <div className="mt-8">
+        <RelatedListingsSection listingId={id} fallbackCar={fallbackCar} />
+      </div>
     </div>
   );
 }
