@@ -74,6 +74,8 @@ export async function uploadToCloudinary(
   const cloudinaryResponse = await new Promise<{
     secure_url: string;
     public_id: string;
+    width: number;
+    height: number;
   }>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(
@@ -109,6 +111,8 @@ export async function uploadToCloudinary(
       endpoint,
       url: cloudinaryResponse.secure_url,
       publicId: cloudinaryResponse.public_id,
+      width: cloudinaryResponse.width,
+      height: cloudinaryResponse.height,
       metadata,
     }),
   });

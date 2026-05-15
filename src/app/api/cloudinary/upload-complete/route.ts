@@ -13,6 +13,8 @@ const requestSchema = z.object({
   ]),
   url: z.string().url(),
   publicId: z.string().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
   metadata: z
     .object({
       partNo: z.string().optional(),
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { endpoint, url, metadata } = parsed.data;
+    const { endpoint, url, width, height, metadata } = parsed.data;
 
     // Handle each endpoint type with its specific database operation
     switch (endpoint) {
@@ -64,7 +66,7 @@ export async function POST(request: Request) {
       case "inventoryImage": {
         // Create the image in the database with an order of 0
         const image = await db.image.create({
-          data: { url, order: 0 },
+          data: { url, order: 0, width, height },
         });
 
         // Return both the URL and the generated ID
@@ -120,6 +122,8 @@ export async function POST(request: Request) {
             partNo,
             order,
             variant: variantValue ?? undefined,
+            width,
+            height,
           },
         });
 

@@ -165,6 +165,8 @@ model ListingComponent {
 model Image {
   id        String   @id @default(cuid())
   url       String
+  width     Int?
+  height    Int?
   listingId String?
   listing   Listing? @relation(fields: [listingId], references: [id], onDelete: Cascade)
   partId    String?

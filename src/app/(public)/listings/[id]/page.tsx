@@ -8,13 +8,23 @@ import { AddToCart } from "./add-to-cart";
 import { InteractiveCompatibleCars } from "./interactive-compatible-cars";
 import { RelatedListings } from "./related-listings";
 import { ListingAnalytics } from "./listing-analytics";
-import { LightboxCarousel } from "~/components/ui/lightbox-carousel";
+import { ProductGallery } from "~/components/product-gallery";
 
 type Props = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{
+    make?: string;
+    series?: string;
+    generation?: string;
+    model?: string;
+  }>;
 };
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
   // read route params
   const { id } = await params;
 
@@ -37,8 +47,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function ListingPage({ params }: Props) {
+export default async function ListingPage({ params, searchParams }: Props) {
   const { id } = await params;
+  const sp = await searchParams;
   const listing = await api.listings.getListing({ id });
 
   if (!listing) {
@@ -54,9 +65,11 @@ export default async function ListingPage({ params }: Props) {
   const formattedImages =
     images && images.length > 0
       ? images.map((img) => ({
-          id: img.id || `img-${Math.random().toString(36).substr(2, 9)}`,
+          id: img.id,
           url: img.url,
           alt: title ?? "",
+          width: img.width,
+          height: img.height,
         }))
       : [];
 
@@ -71,14 +84,17 @@ export default async function ListingPage({ params }: Props) {
     (car, index, self) => index === self.findIndex((c) => c.id === car.id),
   );
 
-  // Get first car's generation and model for related listings
+  // Prefer the car the user selected on the listings screen (passed via URL).
+  // Fall back to the first compatible car on the listing.
   const firstCar = uniqueCompatibleCars[0];
-
-  // Fetch related listings based on first car's generation and model
+  const selectedCar =
+    sp.generation && sp.model
+      ? { generation: sp.generation, model: sp.model }
+      : null;
   const relatedListings = await api.listings.getRelatedListings({
     id,
-    generation: firstCar?.generation ?? "",
-    model: firstCar?.model ?? "",
+    generation: selectedCar?.generation ?? firstCar?.generation ?? "",
+    model: selectedCar?.model ?? firstCar?.model ?? "",
   });
 
   return (
@@ -86,20 +102,9 @@ export default async function ListingPage({ params }: Props) {
       <ListingAnalytics listingId={id} />
 
       <div className="grid gap-8 md:grid-cols-2">
-        {/* Image carousel */}
-        <div className="relative overflow-hidden rounded-lg bg-background">
-          {formattedImages.length > 0 ? (
-            <LightboxCarousel
-              images={formattedImages}
-              aspectRatio="square"
-              objectFit="cover"
-            />
-          ) : (
-            <div className="flex aspect-square items-center justify-center bg-muted">
-              <p className="text-muted-foreground">No images available</p>
-            </div>
-          )}
-        </div>
+        {/* Image gallery */}
+        <ProductGallery images={formattedImages} />
+
 
         {/* Product details */}
         <div className="flex flex-col">
