@@ -10,6 +10,10 @@ export default {
   			sans: [
   				'var(--font-geist-sans)',
                     ...fontFamily.sans
+                ],
+  			handwritten: [
+  				'var(--font-caveat)',
+                    'cursive'
                 ]
   		},
   		borderRadius: {

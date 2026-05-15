@@ -1,12 +1,19 @@
 import "~/styles/globals.css";
 
 import { GeistSans } from "geist/font/sans";
+import { Caveat } from "next/font/google";
 import { type Metadata } from "next";
 
 import { TRPCReactProvider } from "~/trpc/react";
 import { NuqsAdapter } from "nuqs/adapters/next";
 import { Toaster } from "~/components/ui/sonner";
 import { CartUIProvider } from "~/components/cart-provider";
+
+const caveat = Caveat({
+  subsets: ["latin"],
+  variable: "--font-caveat",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Parted Euro",
@@ -20,7 +27,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${GeistSans.variable}`}
+      className={`${GeistSans.variable} ${caveat.variable}`}
       suppressHydrationWarning
     >
       {process.env.NODE_ENV === "development" && (
