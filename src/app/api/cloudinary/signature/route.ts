@@ -7,7 +7,13 @@ import {
 import { z } from "zod";
 
 const requestSchema = z.object({
-  endpoint: z.enum(["homepageImage", "inventoryImage", "partImage", "donorImage"]),
+  endpoint: z.enum([
+    "homepageImage",
+    "inventoryImage",
+    "partImage",
+    "donorImage",
+    "contactImage",
+  ]),
   metadata: z
     .object({
       partNo: z.string().optional(),
