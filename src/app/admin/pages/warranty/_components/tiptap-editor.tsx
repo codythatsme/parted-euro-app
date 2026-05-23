@@ -1,7 +1,7 @@
 "use client";
 
 import { type Editor } from "@tiptap/core";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import {
   AlertTriangle,
   Bold,
@@ -55,12 +55,16 @@ const ToolbarButton = ({
   <Button
     type="button"
     size="icon"
-    variant={active ? "secondary" : "ghost"}
+    variant="ghost"
     aria-pressed={!!active}
     disabled={disabled}
     onClick={onClick}
     title={title}
-    className="h-8 w-8"
+    className={cn(
+      "h-8 w-8",
+      active &&
+        "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+    )}
   >
     {children}
   </Button>
@@ -214,7 +218,6 @@ export function TiptapEditor({
     extensions: editorExtensions,
     content: initial,
     immediatelyRender: false,
-    shouldRerenderOnTransaction: true,
     onUpdate: ({ editor }) => onChange(editor.getJSON() as TiptapDoc),
     editorProps: {
       attributes: {
@@ -224,7 +227,20 @@ export function TiptapEditor({
     },
   });
 
-  if (!editor) {
+  const activeStates = useEditorState({
+    editor,
+    selector: ({ editor }) => ({
+      heading2: editor?.isActive("heading", { level: 2 }) ?? false,
+      bold: editor?.isActive("bold") ?? false,
+      italic: editor?.isActive("italic") ?? false,
+      link: editor?.isActive("link") ?? false,
+      bulletList: editor?.isActive("bulletList") ?? false,
+      orderedList: editor?.isActive("orderedList") ?? false,
+      callout: editor?.isActive("callout") ?? false,
+    }),
+  });
+
+  if (!editor || !activeStates) {
     return (
       <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
         Loading editor…
@@ -237,7 +253,7 @@ export function TiptapEditor({
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b bg-muted/30 p-1">
         <ToolbarButton
           title="Heading 2"
-          active={editor.isActive("heading", { level: 2 })}
+          active={activeStates.heading2}
           onClick={() =>
             editor.chain().focus().toggleHeading({ level: 2 }).run()
           }
@@ -246,21 +262,21 @@ export function TiptapEditor({
         </ToolbarButton>
         <ToolbarButton
           title="Bold"
-          active={editor.isActive("bold")}
+          active={activeStates.bold}
           onClick={() => editor.chain().focus().toggleBold().run()}
         >
           <Bold className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           title="Italic"
-          active={editor.isActive("italic")}
+          active={activeStates.italic}
           onClick={() => editor.chain().focus().toggleItalic().run()}
         >
           <Italic className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           title="Link"
-          active={editor.isActive("link")}
+          active={activeStates.link}
           onClick={() => setLinkOpen(true)}
         >
           <LinkIcon className="h-4 w-4" />
@@ -268,14 +284,14 @@ export function TiptapEditor({
         <span className="mx-1 h-5 w-px bg-border" />
         <ToolbarButton
           title="Bullet list"
-          active={editor.isActive("bulletList")}
+          active={activeStates.bulletList}
           onClick={() => editor.chain().focus().toggleBulletList().run()}
         >
           <List className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton
           title="Numbered list"
-          active={editor.isActive("orderedList")}
+          active={activeStates.orderedList}
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
         >
           <ListOrdered className="h-4 w-4" />
@@ -289,7 +305,7 @@ export function TiptapEditor({
         </ToolbarButton>
         <ToolbarButton
           title="Insert callout"
-          active={editor.isActive("callout")}
+          active={activeStates.callout}
           onClick={() => setCalloutOpen(true)}
         >
           <AlertTriangle className="h-4 w-4" />
