@@ -14,8 +14,18 @@ import type {
 } from "ebay-api/lib/enums";
 import { CategoryType, TimeDurationUnit } from "ebay-api/lib/enums";
 import { db } from "~/server/db";
-import { ebay, initEbayClient } from "~/server/lib/ebay-client";
-import { calculateRequiredPartCounts, calculateStock } from "~/server/lib/stock";
+import { env } from "~/env";
+import {
+  ebay,
+  exchangeEbayAuthCode,
+  getEbayAuthUrl,
+  initEbayClient,
+} from "~/server/lib/ebay-client";
+import { syncEbayQuantitiesForListings } from "~/server/lib/ebay-sync";
+import {
+  calculateRequiredPartCounts,
+  calculateStock,
+} from "~/server/lib/stock";
 import { PartStatus } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 
@@ -141,7 +151,6 @@ const renderTemplate = (
   return output;
 };
 
-
 const buildPartsTableHtml = (
   cars: { series: string; generation: string; model: string }[],
 ) => {
@@ -236,9 +245,7 @@ const getListingStockSnapshot = async (listingId: string) => {
 export const ebayRouter = createTRPCRouter({
   // Auth functions
   authenticate: adminProcedure.mutation(async ({ ctx }) => {
-    ebay.OAuth2.setScope(process.env.EBAY_SCOPES!.split(" "));
-    const url = ebay.OAuth2.generateAuthUrl();
-    return url;
+    return getEbayAuthUrl();
   }),
   // Template management
   getListingTemplate: adminProcedure.query(async ({ ctx }) => {
@@ -275,19 +282,8 @@ export const ebayRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const token = await ebay.OAuth2.getToken(input.code);
-      const creds = await ctx.db.ebayCreds.findFirst();
-      const updatedCreds = await ctx.db.ebayCreds.update({
-        where: {
-          id: creds?.id,
-        },
-        data: {
-          refreshToken: token,
-        },
-      });
-      return {
-        updatedCreds,
-      };
+      await exchangeEbayAuthCode(input.code);
+      return { success: true };
     }),
   testEbayConnection: adminProcedure.query(async ({ ctx }) => {
     await initEbayClient();
@@ -353,7 +349,8 @@ export const ebayRouter = createTRPCRouter({
       if (!derivedPartNo) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Listing must have at least one component with a part number.",
+          message:
+            "Listing must have at least one component with a part number.",
         });
       }
 
@@ -469,10 +466,10 @@ export const ebayRouter = createTRPCRouter({
         listingDescription,
         listingPolicies: {
           fulfillmentPolicyId: fulfillmentPolicy,
-          paymentPolicyId: process.env.EBAY_PAYMENT_ID!,
-          returnPolicyId: process.env.EBAY_RETURN_ID!,
+          paymentPolicyId: env.EBAY_PAYMENT_ID,
+          returnPolicyId: env.EBAY_RETURN_ID,
         },
-        merchantLocationKey: process.env.EBAY_MERCHANT_KEY!,
+        merchantLocationKey: env.EBAY_MERCHANT_KEY,
         pricingSummary: {
           price: {
             currency: "AUD" as CurrencyCode,
@@ -570,7 +567,9 @@ export const ebayRouter = createTRPCRouter({
           },
         },
       });
-      const listingById = new Map(listings.map((listing) => [listing.id, listing]));
+      const listingById = new Map(
+        listings.map((listing) => [listing.id, listing]),
+      );
 
       for (const item of input.items) {
         const listing = listingById.get(item.listingId);
@@ -686,18 +685,10 @@ export const ebayRouter = createTRPCRouter({
         return order;
       });
 
-      // Best effort quantity sync for affected listings.
-      await Promise.allSettled(
+      await syncEbayQuantitiesForListings(
         listings
           .filter((listing) => listing.listedOnEbay && !!listing.ebayOfferId)
-          .map(async (listing) => {
-            const snapshot = await getListingStockSnapshot(listing.id);
-            const offerId = listing.ebayOfferId;
-            if (!offerId) return;
-            const offer = await ebay.sell.inventory.getOffer(offerId);
-            offer.availableQuantity = snapshot.quantity;
-            await ebay.sell.inventory.updateOffer(offerId, offer);
-          }),
+          .map((listing) => listing.id),
       );
 
       return {
@@ -762,7 +753,6 @@ export const ebayRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const offer = await ebay.sell.inventory.getOffer(input.offerId);
       await initEbayClient();
       try {
         const publishOffer = await ebay.sell.inventory.publishOffer(
@@ -872,8 +862,7 @@ export const ebayRouter = createTRPCRouter({
     console.log(`Regenerating ${listings.length} listings`);
 
     const settings = await ctx.db.ebaySettings.findFirst();
-    const template =
-      settings?.listingTemplate ?? DEFAULT_EBAY_LISTING_TEMPLATE;
+    const template = settings?.listingTemplate ?? DEFAULT_EBAY_LISTING_TEMPLATE;
 
     let succeeded = 0;
     let failed = 0;
@@ -883,9 +872,7 @@ export const ebayRouter = createTRPCRouter({
       const batch = listings.slice(i, i + BATCH_SIZE);
       const results = await Promise.allSettled(
         batch.map(async (listing) => {
-          const cars = listing.components.flatMap(
-            (c) => c.partDetail.cars,
-          );
+          const cars = listing.components.flatMap((c) => c.partDetail.cars);
           const partsTable = buildPartsTableHtml(cars);
           const listingDescription = renderTemplate(template, {
             DESCRIPTION: listing.description,

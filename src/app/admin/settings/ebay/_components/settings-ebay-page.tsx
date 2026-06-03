@@ -132,7 +132,9 @@ export function SettingsEbayPage() {
               disabled={ebayLogin.isPending}
               className="mt-4"
             >
-              {ebayLogin.isPending ? "Reconnecting..." : "Refresh eBay Token"}
+              {ebayLogin.isPending
+                ? "Reconnecting..."
+                : "Reconnect eBay Account"}
             </Button>
           )}
         </CardContent>
