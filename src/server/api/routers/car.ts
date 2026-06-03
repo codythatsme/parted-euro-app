@@ -1,15 +1,43 @@
 import { z } from "zod";
 import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
 
+const optionalText = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}, z.string().optional());
+
 // Define car input validation schema
-const carSchema = z.object({
-  id: z.string().optional(),
-  make: z.string().min(1, "Make is required"),
-  series: z.string().min(1, "Series is required"),
-  generation: z.string().min(1, "Generation is required"),
-  model: z.string().min(1, "Model is required"),
-  body: z.string().optional(),
-});
+const carSchema = z
+  .object({
+    id: z.string().optional(),
+    make: z.string().trim().min(1, "Make is required"),
+    series: z.string().trim().min(1, "Series is required"),
+    generation: z.string().trim().min(1, "Generation is required"),
+    chassisCode: optionalText,
+    model: z.string().trim().min(1, "Model is required"),
+    body: optionalText,
+    engine: optionalText,
+  })
+  .superRefine((value, ctx) => {
+    if (value.make.toUpperCase() !== "BMW") return;
+
+    if (value.chassisCode === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["chassisCode"],
+        message: "Chassis code is required for BMW cars",
+      });
+    }
+
+    if (value.engine === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["engine"],
+        message: "Engine is required for BMW cars",
+      });
+    }
+  });
 
 export const carRouter = createTRPCRouter({
   // car selection search page
@@ -110,6 +138,44 @@ export const carRouter = createTRPCRouter({
         models: uniqueModels,
       };
     }),
+  getMatchingEngines: publicProcedure
+    .input(
+      z.object({
+        series: z.string().min(2),
+        generation: z.string().min(2),
+        model: z.string().min(1),
+        make: z.string().default("BMW"),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const cars = await ctx.db.car.findMany({
+        where: {
+          series: input.series,
+          generation: input.generation,
+          model: input.model,
+          make: input.make,
+          engine: {
+            not: null,
+          },
+        },
+        select: {
+          engine: true,
+        },
+      });
+      const engines = cars
+        .map((car) => car.engine)
+        .filter((engine): engine is string => engine !== null)
+        .sort();
+      const uniqueEngines = [...new Set(engines)].sort().map((engine) => {
+        return {
+          label: engine,
+          value: engine,
+        };
+      });
+      return {
+        engines: uniqueEngines,
+      };
+    }),
 
   // Get all cars
   getAll: adminProcedure.query(async ({ ctx }) => {
@@ -161,8 +227,10 @@ export const carRouter = createTRPCRouter({
         make: input.make,
         series: input.series,
         generation: input.generation,
+        chassisCode: input.chassisCode ?? null,
         model: input.model,
-        body: input.body,
+        body: input.body ?? null,
+        engine: input.engine ?? null,
       },
     });
     return car;
@@ -179,8 +247,10 @@ export const carRouter = createTRPCRouter({
           make: data.make,
           series: data.series,
           generation: data.generation,
+          chassisCode: data.chassisCode ?? null,
           model: data.model,
-          body: data.body,
+          body: data.body ?? null,
+          engine: data.engine ?? null,
         },
       });
       return car;

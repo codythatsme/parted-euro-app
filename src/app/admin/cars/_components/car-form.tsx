@@ -24,14 +24,42 @@ import { Input } from "~/components/ui/input";
 import { toast } from "sonner";
 import { type AdminCarItem } from "~/trpc/shared";
 
-export const carFormSchema = z.object({
-  id: z.string().optional(),
-  make: z.string().min(1, "Make is required"),
-  series: z.string().min(1, "Series is required"),
-  generation: z.string().min(1, "Generation is required"),
-  model: z.string().min(1, "Model is required"),
-  body: z.string().optional(),
-});
+const optionalText = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}, z.string().optional());
+
+export const carFormSchema = z
+  .object({
+    id: z.string().optional(),
+    make: z.string().trim().min(1, "Make is required"),
+    series: z.string().trim().min(1, "Series is required"),
+    generation: z.string().trim().min(1, "Generation is required"),
+    chassisCode: optionalText,
+    model: z.string().trim().min(1, "Model is required"),
+    body: optionalText,
+    engine: optionalText,
+  })
+  .superRefine((value, ctx) => {
+    if (value.make.toUpperCase() !== "BMW") return;
+
+    if (value.chassisCode === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["chassisCode"],
+        message: "Chassis code is required for BMW cars",
+      });
+    }
+
+    if (value.engine === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["engine"],
+        message: "Engine is required for BMW cars",
+      });
+    }
+  });
 
 export type CarFormValues = z.infer<typeof carFormSchema>;
 
@@ -57,15 +85,19 @@ export function CarForm({
         make: defaultValues.make,
         series: defaultValues.series,
         generation: defaultValues.generation,
+        chassisCode: defaultValues.chassisCode ?? "",
         model: defaultValues.model,
         body: defaultValues.body ?? "",
+        engine: defaultValues.engine ?? "",
       }
     : {
         make: "",
         series: "",
         generation: "",
+        chassisCode: "",
         model: "",
         body: "",
+        engine: "",
       };
 
   const form = useForm<CarFormValues>({
@@ -116,7 +148,7 @@ export function CarForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit Car" : "Add New Car"}</DialogTitle>
         </DialogHeader>
@@ -166,6 +198,23 @@ export function CarForm({
             />
             <FormField
               control={form.control}
+              name="chassisCode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Chassis Code</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="E46 or E46N"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
               name="model"
               render={({ field }) => (
                 <FormItem>
@@ -177,6 +226,42 @@ export function CarForm({
                 </FormItem>
               )}
             />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="body"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Body</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Sedan"
+                        {...field}
+                        value={field.value ?? ""}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="engine"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Engine</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="N52"
+                        {...field}
+                        value={field.value ?? ""}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <div className="flex justify-end space-x-2">
               <Button
                 variant="outline"

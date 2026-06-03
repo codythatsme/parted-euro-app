@@ -2,7 +2,10 @@ import { PartStatus, type Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { calculateStock } from "~/server/lib/stock";
-import { syncEbayQuantitiesForListings, syncEbayQuantityForListing } from "~/server/lib/ebay-sync";
+import {
+  syncEbayQuantitiesForListings,
+  syncEbayQuantityForListing,
+} from "~/server/lib/ebay-sync";
 import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
 
 const componentSchema = z.object({
@@ -132,6 +135,8 @@ export const listingsRouter = createTRPCRouter({
                       series: true,
                       generation: true,
                       model: true,
+                      body: true,
+                      engine: true,
                     },
                   },
                 },
@@ -148,7 +153,14 @@ export const listingsRouter = createTRPCRouter({
       }
 
       const seen = new Set<string>();
-      const cars: Array<{ id: string; series: string; generation: string; model: string }> = [];
+      const cars: Array<{
+        id: string;
+        series: string;
+        generation: string;
+        model: string;
+        body: string | null;
+        engine: string | null;
+      }> = [];
       for (const component of listing.components) {
         for (const car of component.partDetail.cars) {
           if (!seen.has(car.id)) {
@@ -219,7 +231,9 @@ export const listingsRouter = createTRPCRouter({
           tx,
           listingId: created.id,
           componentPartDetailIds: [
-            ...new Set(input.components.map((component) => component.partDetailId)),
+            ...new Set(
+              input.components.map((component) => component.partDetailId),
+            ),
           ],
         });
 
@@ -516,7 +530,10 @@ export const listingsRouter = createTRPCRouter({
       });
 
       await syncEbayQuantityForListing(input.listingId).catch((error) => {
-        console.error("eBay quantity sync failed after manual allocation", error);
+        console.error(
+          "eBay quantity sync failed after manual allocation",
+          error,
+        );
       });
 
       return {
@@ -613,6 +630,7 @@ export const listingsRouter = createTRPCRouter({
       z.object({
         generation: z.string(),
         model: z.string(),
+        engine: z.string().optional(),
         id: z.string(),
       }),
     )
@@ -639,6 +657,7 @@ export const listingsRouter = createTRPCRouter({
                   some: {
                     generation: input.generation,
                     model: input.model,
+                    ...(input.engine ? { engine: input.engine } : {}),
                   },
                 },
               },
@@ -842,7 +861,9 @@ export const listingsRouter = createTRPCRouter({
         });
       }
 
-      const unavailable = parts.filter((p) => p.status !== PartStatus.AVAILABLE);
+      const unavailable = parts.filter(
+        (p) => p.status !== PartStatus.AVAILABLE,
+      );
       if (unavailable.length > 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -910,9 +931,14 @@ export const listingsRouter = createTRPCRouter({
         .map((p) => p.allocatedToListingId)
         .filter((id): id is string => id !== null);
       if (affectedListingIds.length > 0) {
-        await syncEbayQuantitiesForListings(affectedListingIds).catch((error) => {
-          console.error("eBay quantity sync failed after markPartsSoldDirect", error);
-        });
+        await syncEbayQuantitiesForListings(affectedListingIds).catch(
+          (error) => {
+            console.error(
+              "eBay quantity sync failed after markPartsSoldDirect",
+              error,
+            );
+          },
+        );
       }
 
       return { success: true, orderId: result.orderId };
@@ -923,6 +949,7 @@ export const listingsRouter = createTRPCRouter({
       z.object({
         generation: z.string().optional(),
         model: z.string().optional(),
+        engine: z.string().optional(),
         series: z.string().optional(),
         make: z.string().optional(),
         search: z.string().optional(),
@@ -1003,7 +1030,13 @@ export const listingsRouter = createTRPCRouter({
         });
       }
 
-      if (input.generation || input.model || input.series || input.make) {
+      if (
+        input.generation ||
+        input.model ||
+        input.engine ||
+        input.series ||
+        input.make
+      ) {
         filterConditions.push({
           components: {
             some: {
@@ -1024,6 +1057,11 @@ export const listingsRouter = createTRPCRouter({
                             contains: input.model,
                             mode: "insensitive",
                           },
+                        }
+                      : {}),
+                    ...(input.engine
+                      ? {
+                          engine: input.engine,
                         }
                       : {}),
                     ...(input.series
@@ -1088,7 +1126,10 @@ export const listingsRouter = createTRPCRouter({
         orderBy,
       });
       const countRequest = ctx.db.listing.count({ where: queryWhere });
-      const [listings, count] = await Promise.all([listingsRequest, countRequest]);
+      const [listings, count] = await Promise.all([
+        listingsRequest,
+        countRequest,
+      ]);
       const hasNextPage = count > input.page * 20 + 20;
       const totalPages = Math.ceil(count / 20);
 

@@ -70,14 +70,19 @@ enum PartStatus {
 }
 
 model Car {
-  id         String       @id @default(cuid())
-  make       String
-  series     String
-  generation String
-  model      String
-  body       String?
-  Donor      Donor[]
-  parts      PartDetail[]
+  id          String       @id @default(cuid())
+  make        String
+  series      String
+  generation  String
+  chassisCode String?
+  model       String
+  body        String?
+  engine      String?
+  Donor       Donor[]
+  parts       PartDetail[]
+
+  @@unique([make, chassisCode, model, body, engine])
+  @@index([chassisCode])
 }
 
 model Donor {

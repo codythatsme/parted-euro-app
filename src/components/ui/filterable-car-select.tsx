@@ -34,6 +34,9 @@ export type CarOption = {
   series: string;
   generation: string;
   model: string;
+  body?: string | null;
+  chassisCode?: string | null;
+  engine?: string | null;
 };
 
 interface FilterableCarSelectProps {
@@ -67,6 +70,7 @@ export function FilterableCarSelect({
   const [seriesFilter, setSeriesFilter] = React.useState<string>("");
   const [generationFilter, setGenerationFilter] = React.useState<string>("");
   const [modelFilter, setModelFilter] = React.useState<string>("");
+  const [engineFilter, setEngineFilter] = React.useState<string>("");
   const [showSelectedOnly, setShowSelectedOnly] =
     React.useState<boolean>(false);
 
@@ -102,6 +106,26 @@ export function FilterableCarSelect({
     return Array.from(modelSet).sort();
   }, [options, seriesFilter, generationFilter]);
 
+  const uniqueEngines = React.useMemo(() => {
+    const engineSet = new Set<string>();
+    options.forEach((option) => {
+      if (
+        (seriesFilter === "" ||
+          seriesFilter === "all" ||
+          option.series === seriesFilter) &&
+        (generationFilter === "" ||
+          generationFilter === "all" ||
+          option.generation === generationFilter) &&
+        (modelFilter === "" ||
+          modelFilter === "all" ||
+          option.model === modelFilter)
+      ) {
+        if (option.engine) engineSet.add(option.engine);
+      }
+    });
+    return Array.from(engineSet).sort();
+  }, [options, seriesFilter, generationFilter, modelFilter]);
+
   // Filter options based on search and filters
   const filteredOptions = React.useMemo(() => {
     return options.filter((option) => {
@@ -124,6 +148,10 @@ export function FilterableCarSelect({
         modelFilter === "" ||
         modelFilter === "all" ||
         option.model === modelFilter;
+      const matchesEngine =
+        engineFilter === "" ||
+        engineFilter === "all" ||
+        option.engine === engineFilter;
 
       // Apply selected only filter
       const matchesSelectedFilter =
@@ -134,6 +162,7 @@ export function FilterableCarSelect({
         matchesSeries &&
         matchesGeneration &&
         matchesModel &&
+        matchesEngine &&
         matchesSelectedFilter
       );
     });
@@ -143,6 +172,7 @@ export function FilterableCarSelect({
     seriesFilter,
     generationFilter,
     modelFilter,
+    engineFilter,
     showSelectedOnly,
     selectedOptions,
   ]);
@@ -199,6 +229,7 @@ export function FilterableCarSelect({
     setSeriesFilter("");
     setGenerationFilter("");
     setModelFilter("");
+    setEngineFilter("");
     setShowSelectedOnly(false);
   };
 
@@ -307,6 +338,7 @@ export function FilterableCarSelect({
               {(seriesFilter ||
                 generationFilter ||
                 modelFilter ||
+                engineFilter ||
                 showSelectedOnly) && (
                 <Button
                   variant="ghost"
@@ -327,6 +359,7 @@ export function FilterableCarSelect({
                     // Reset dependent filters when parent filter changes
                     setGenerationFilter("");
                     setModelFilter("");
+                    setEngineFilter("");
                   }}
                 >
                   <SelectTrigger className="h-8 w-[120px]">
@@ -348,6 +381,7 @@ export function FilterableCarSelect({
                     setGenerationFilter(value);
                     // Reset dependent filters
                     setModelFilter("");
+                    setEngineFilter("");
                   }}
                   disabled={uniqueGenerations.length === 0}
                 >
@@ -366,7 +400,10 @@ export function FilterableCarSelect({
 
                 <Select
                   value={modelFilter}
-                  onValueChange={setModelFilter}
+                  onValueChange={(value) => {
+                    setModelFilter(value);
+                    setEngineFilter("");
+                  }}
                   disabled={uniqueModels.length === 0}
                 >
                   <SelectTrigger className="h-8 w-[120px]">
@@ -377,6 +414,24 @@ export function FilterableCarSelect({
                     {uniqueModels.map((model) => (
                       <SelectItem key={model} value={model}>
                         {model}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={engineFilter}
+                  onValueChange={setEngineFilter}
+                  disabled={uniqueEngines.length === 0}
+                >
+                  <SelectTrigger className="h-8 w-[120px]">
+                    <SelectValue placeholder="Engine" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Engines</SelectItem>
+                    {uniqueEngines.map((engine) => (
+                      <SelectItem key={engine} value={engine}>
+                        {engine}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -430,7 +485,7 @@ export function FilterableCarSelect({
           >
             <CommandEmpty>No cars found.</CommandEmpty>
             <CommandGroup
-              key={`${filteredOptions.length}-${search}-${seriesFilter}-${generationFilter}-${modelFilter}`}
+              key={`${filteredOptions.length}-${search}-${seriesFilter}-${generationFilter}-${modelFilter}-${engineFilter}`}
             >
               <div
                 style={{

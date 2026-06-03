@@ -1,7 +1,16 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { Car, Layers, MoreHorizontal, Pencil, Shapes, Trash } from "lucide-react";
+import {
+  Car,
+  Cpu,
+  Gauge,
+  Layers,
+  MoreHorizontal,
+  Pencil,
+  Shapes,
+  Trash,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -68,10 +77,46 @@ export function getCarColumns({
       },
     },
     {
+      accessorKey: "chassisCode",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Chassis" />
+      ),
+      meta: {
+        displayName: "Chassis",
+        icon: Cpu,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s || "None", value: s };
+        },
+      },
+    },
+    {
       accessorKey: "model",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Model" />
       ),
+    },
+    {
+      accessorKey: "body",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Body" />
+      ),
+    },
+    {
+      accessorKey: "engine",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Engine" />
+      ),
+      meta: {
+        displayName: "Engine",
+        icon: Gauge,
+        type: "option",
+        transformOptionFn: (val) => {
+          const s = typeof val === "string" ? val : "";
+          return { label: s || "None", value: s };
+        },
+      },
     },
     {
       id: "actions",

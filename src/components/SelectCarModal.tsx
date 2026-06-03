@@ -18,6 +18,7 @@ type SelectCarModalProps = {
     series?: string;
     generation?: string;
     model?: string;
+    engine?: string;
   }) => void;
 };
 
@@ -26,7 +27,7 @@ export function SelectCarModal({
   onOpenChange,
   onCarSelected,
 }: SelectCarModalProps) {
-  // Track current step (0: make, 1: series, 2: generation, 3: model)
+  // Track current step (0: make, 1: series, 2: generation, 3: model, 4: engine)
   const [step, setStep] = useState(0);
 
   // Store selections
@@ -34,6 +35,7 @@ export function SelectCarModal({
   const [selectedSeries, setSelectedSeries] = useState<string>("");
   const [selectedGeneration, setSelectedGeneration] = useState<string>("");
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const [selectedEngine, setSelectedEngine] = useState<string>("");
 
   // Reset selections and step when modal opens
   useEffect(() => {
@@ -43,6 +45,7 @@ export function SelectCarModal({
       setSelectedSeries("");
       setSelectedGeneration("");
       setSelectedModel("");
+      setSelectedEngine("");
     }
   }, [open]);
 
@@ -72,6 +75,23 @@ export function SelectCarModal({
       { enabled: !!selectedMake && !!selectedSeries && !!selectedGeneration },
     );
 
+  const { data: enginesData, isLoading: isLoadingEngines } =
+    api.car.getMatchingEngines.useQuery(
+      {
+        make: selectedMake,
+        series: selectedSeries,
+        generation: selectedGeneration,
+        model: selectedModel,
+      },
+      {
+        enabled:
+          !!selectedMake &&
+          !!selectedSeries &&
+          !!selectedGeneration &&
+          !!selectedModel,
+      },
+    );
+
   // Reset the selection process
   const resetSelections = () => {
     setStep(0);
@@ -79,6 +99,7 @@ export function SelectCarModal({
     setSelectedSeries("");
     setSelectedGeneration("");
     setSelectedModel("");
+    setSelectedEngine("");
   };
 
   // Handle closing the dialog
@@ -106,6 +127,7 @@ export function SelectCarModal({
       series: selectedSeries || undefined,
       generation: selectedGeneration || undefined,
       model: selectedModel || undefined,
+      engine: selectedEngine || undefined,
     });
     onOpenChange(false);
   };
@@ -116,6 +138,7 @@ export function SelectCarModal({
     setSelectedSeries("");
     setSelectedGeneration("");
     setSelectedModel("");
+    setSelectedEngine("");
     goToNextStep();
   };
 
@@ -123,23 +146,31 @@ export function SelectCarModal({
     setSelectedSeries(series);
     setSelectedGeneration("");
     setSelectedModel("");
+    setSelectedEngine("");
     goToNextStep();
   };
 
   const handleGenerationSelect = (generation: string) => {
     setSelectedGeneration(generation);
     setSelectedModel("");
+    setSelectedEngine("");
     goToNextStep();
   };
 
   const handleModelSelect = (model: string) => {
     setSelectedModel(model);
-    // Complete the selection process
+    setSelectedEngine("");
+    goToNextStep();
+  };
+
+  const handleEngineSelect = (engine?: string) => {
+    setSelectedEngine(engine ?? "");
     onCarSelected({
       make: selectedMake,
       series: selectedSeries,
       generation: selectedGeneration,
-      model,
+      model: selectedModel,
+      engine,
     });
     onOpenChange(false);
   };
@@ -286,6 +317,56 @@ export function SelectCarModal({
                     onClick={() => handleModelSelect(model.value)}
                   >
                     <span>{model.label}</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-between pt-2">
+              <Button variant="ghost" onClick={goToPreviousStep}>
+                Back
+              </Button>
+              <Button variant="default" onClick={confirmSelection}>
+                Confirm Selection
+              </Button>
+            </div>
+          </div>
+        );
+
+      case 4: // Engine selection
+        return (
+          <div className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>Select Engine</DialogTitle>
+              <DialogDescription>
+                {selectedMake} &gt; {selectedSeries} &gt; {selectedGeneration}{" "}
+                &gt; {selectedModel}
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingEngines ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <Button
+                  variant="outline"
+                  className="justify-between px-4 py-6"
+                  onClick={() => handleEngineSelect()}
+                >
+                  <span>Any engine</span>
+                  <Check className="h-4 w-4" />
+                </Button>
+                {enginesData?.engines.map((engine) => (
+                  <Button
+                    key={engine.value}
+                    variant="outline"
+                    className="justify-between px-4 py-6"
+                    onClick={() => handleEngineSelect(engine.value)}
+                  >
+                    <span>{engine.label}</span>
                     <Check className="h-4 w-4" />
                   </Button>
                 ))}

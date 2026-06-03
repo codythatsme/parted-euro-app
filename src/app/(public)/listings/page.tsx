@@ -4,14 +4,7 @@ import { useState, useEffect } from "react";
 import { api } from "~/trpc/react";
 import { parseAsInteger, useQueryState } from "nuqs";
 import { useDebounce } from "use-debounce";
-import {
-  Search,
-  Filter,
-  X,
-  ArrowUpDown,
-  Car,
-  Loader2,
-} from "lucide-react";
+import { Search, Filter, X, ArrowUpDown, Car, Loader2 } from "lucide-react";
 
 // UI Components
 import { Button } from "~/components/ui/button";
@@ -72,6 +65,7 @@ export default function ListingsPage() {
   const series = selectedCar?.series ?? "";
   const generation = selectedCar?.generation ?? "";
   const model = selectedCar?.model ?? "";
+  const engine = selectedCar?.engine ?? "";
 
   // Local state
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -103,6 +97,7 @@ export default function ListingsPage() {
     subcat,
     generation,
     model,
+    engine,
     series,
     make,
   });
@@ -172,6 +167,7 @@ export default function ListingsPage() {
     subcat ||
     generation ||
     model ||
+    engine ||
     series ||
     make
   );
@@ -182,6 +178,7 @@ export default function ListingsPage() {
     series?: string;
     generation?: string;
     model?: string;
+    engine?: string;
   }) => {
     setSelectedCar(carData);
     void setPage(1);
@@ -344,6 +341,7 @@ export default function ListingsPage() {
                         subcat,
                         generation,
                         model,
+                        engine,
                         series,
                         make,
                       ].filter(Boolean).length
@@ -442,10 +440,10 @@ export default function ListingsPage() {
                   </Button>
                 </Badge>
               )}
-              {(make || generation || model || series) && (
+              {(make || generation || model || engine || series) && (
                 <Badge variant="secondary" className="flex items-center gap-1">
                   <Car className="mr-1 h-3 w-3" />
-                  {[make, series, generation, model]
+                  {[make, series, generation, model, engine]
                     .filter(Boolean)
                     .join(" - ")}
                   <Button
@@ -656,7 +654,7 @@ export default function ListingsPage() {
             <h3 className="font-medium">Car Details</h3>
           </div>
 
-          {make || generation || model || series ? (
+          {make || generation || model || engine || series ? (
             <div className="rounded-md border p-3">
               {make && (
                 <div className="flex items-center justify-between">
@@ -682,6 +680,12 @@ export default function ListingsPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Model:</span>
                   <span className="text-sm font-medium">{model}</span>
+                </div>
+              )}
+              {engine && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Engine:</span>
+                  <span className="text-sm font-medium">{engine}</span>
                 </div>
               )}
 

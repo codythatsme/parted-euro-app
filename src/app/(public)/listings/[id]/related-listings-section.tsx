@@ -17,13 +17,18 @@ export function RelatedListingsSection({ listingId, fallbackCar }: Props) {
   // compatible car.
   const car =
     selectedCar?.generation && selectedCar?.model
-      ? { generation: selectedCar.generation, model: selectedCar.model }
+      ? {
+          generation: selectedCar.generation,
+          model: selectedCar.model,
+          engine: selectedCar.engine,
+        }
       : fallbackCar;
 
   const { data } = api.listings.getRelatedListings.useQuery({
     id: listingId,
     generation: car.generation,
     model: car.model,
+    engine: "engine" in car ? car.engine : undefined,
   });
 
   if (!data || data.length === 0) return null;

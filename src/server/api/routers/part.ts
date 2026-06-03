@@ -32,6 +32,9 @@ export const partRouter = createTRPCRouter({
             model: true,
             series: true,
             generation: true,
+            body: true,
+            chassisCode: true,
+            engine: true,
           },
         },
         partTypes: {
@@ -59,17 +62,28 @@ export const partRouter = createTRPCRouter({
         series: true,
         body: true,
         generation: true,
+        chassisCode: true,
+        engine: true,
       },
       orderBy: [{ make: "asc" }, { model: "asc" }],
     });
 
     return cars.map((car) => ({
       value: car.id,
-      label: `${car.make} ${car.model} (${car.series} ${car.generation}) ${car.body ? `// ${car.body}` : ""}`,
+      label: `${car.make} ${car.model} (${car.series} ${car.generation}) ${[
+        car.body,
+        car.engine,
+        car.chassisCode,
+      ]
+        .filter(Boolean)
+        .join(" // ")}`,
       make: car.make,
       series: car.series,
       generation: car.generation,
       model: car.model,
+      body: car.body,
+      chassisCode: car.chassisCode,
+      engine: car.engine,
     }));
   }),
 
@@ -169,7 +183,10 @@ export const partRouter = createTRPCRouter({
         }),
       ]);
       if (!part) return null;
-      return { ...part, defaultLocationId: recentLocated?.inventoryLocationId ?? null };
+      return {
+        ...part,
+        defaultLocationId: recentLocated?.inventoryLocationId ?? null,
+      };
     }),
 
   // Create a new part

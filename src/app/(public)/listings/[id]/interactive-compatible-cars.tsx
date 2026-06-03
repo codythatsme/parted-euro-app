@@ -10,9 +10,10 @@ type Car = {
   series: string;
   model: string;
   body: string | null;
+  engine: string | null;
 };
 
-type ModelEntry = { model: string; body: string | null };
+type ModelEntry = { model: string; body: string | null; engine: string | null };
 
 interface InteractiveCompatibleCarsProps {
   cars: Car[];
@@ -40,6 +41,7 @@ export function InteractiveCompatibleCars({
       const generation = car.generation || "Unknown";
       const model = car.model || "Unknown";
       const body = car.body;
+      const engine = car.engine;
 
       const seriesEntry = (grouped[series] ??= { series, generations: {} });
       const genEntry = (seriesEntry.generations[generation] ??= {
@@ -48,9 +50,9 @@ export function InteractiveCompatibleCars({
       });
 
       const duplicate = genEntry.models.some(
-        (m) => m.model === model && m.body === body,
+        (m) => m.model === model && m.body === body && m.engine === engine,
       );
-      if (!duplicate) genEntry.models.push({ model, body });
+      if (!duplicate) genEntry.models.push({ model, body, engine });
     });
 
     return grouped;
@@ -62,7 +64,7 @@ export function InteractiveCompatibleCars({
   const match = useMemo(() => {
     if (!selectedCar) return null;
     const seriesMatch = selectedCar.series
-      ? carsBySeriesAndGeneration[selectedCar.series]?.series ?? null
+      ? (carsBySeriesAndGeneration[selectedCar.series]?.series ?? null)
       : null;
     if (!seriesMatch) return null;
     const generations = carsBySeriesAndGeneration[seriesMatch]?.generations;
@@ -74,6 +76,7 @@ export function InteractiveCompatibleCars({
       series: seriesMatch,
       generation: generationMatch,
       model: selectedCar.model ?? null,
+      engine: selectedCar.engine ?? null,
     };
   }, [selectedCar, carsBySeriesAndGeneration]);
 
@@ -189,7 +192,11 @@ export function InteractiveCompatibleCars({
                               {gen.models.map((m, idx) => {
                                 const isMatchedModel =
                                   isMatchedGeneration &&
-                                  match?.model === m.model;
+                                  match?.model === m.model &&
+                                  (!match.engine || match.engine === m.engine);
+                                const variant = [m.body, m.engine]
+                                  .filter(Boolean)
+                                  .join(", ");
                                 return (
                                   <div
                                     key={idx}
@@ -202,7 +209,7 @@ export function InteractiveCompatibleCars({
                                       )}
                                     >
                                       {m.model}
-                                      {m.body ? ` (${m.body})` : ""}
+                                      {variant ? ` (${variant})` : ""}
                                     </span>
                                     {isMatchedModel && <FitsYourCarCallout />}
                                   </div>
@@ -235,7 +242,7 @@ function FitsYourCarCallout() {
   return (
     <span className="inline-flex items-center gap-1 leading-none">
       <CurlyArrow className="h-7 w-9 -translate-y-1 text-amber-600" />
-      <span className="font-handwritten text-xl font-bold text-amber-600 -rotate-[4deg]">
+      <span className="-rotate-[4deg] font-handwritten text-xl font-bold text-amber-600">
         Fits your car!
       </span>
     </span>

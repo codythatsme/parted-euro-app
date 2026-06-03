@@ -6,6 +6,7 @@ export type SelectedCar = {
   series?: string;
   generation?: string;
   model?: string;
+  engine?: string;
 };
 
 type SelectedCarStore = {

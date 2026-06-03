@@ -6,6 +6,7 @@ type Car = {
   series: string;
   model: string;
   body: string | null;
+  engine: string | null;
 };
 
 interface CompatibleCarsProps {
@@ -27,6 +28,7 @@ export function CompatibleCars({ cars }: CompatibleCarsProps) {
             car.series,
             car.model,
             car.body,
+            car.engine,
           ].filter(Boolean);
 
           const displayName = parts.join(" ");
