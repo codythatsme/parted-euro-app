@@ -75,6 +75,12 @@ type DuplicateMergeTarget = {
   legacyRows: string[];
 };
 
+type DuplicateTargetConflict = {
+  target: DbCar;
+  mergeActions: MergeAction[];
+  reason: string;
+};
+
 const db = new PrismaClient();
 const isApply = process.argv.includes("--apply");
 
@@ -188,6 +194,49 @@ const findDuplicateMergeTargets = (
         legacyRows: targetActions.map((action) => formatCar(action.legacy)),
       };
     });
+};
+
+const splitDuplicateTargetConflicts = (
+  actions: MergeAction[],
+): {
+  safeMergeActions: MergeAction[];
+  duplicateTargetConflicts: DuplicateTargetConflict[];
+} => {
+  const byTargetId = new Map<string, MergeAction[]>();
+
+  for (const action of actions) {
+    const targetActions = byTargetId.get(action.target.id) ?? [];
+    targetActions.push(action);
+    byTargetId.set(action.target.id, targetActions);
+  }
+
+  const duplicateTargetIds = new Set(
+    [...byTargetId.entries()]
+      .filter(([, targetActions]) => targetActions.length > 1)
+      .map(([targetId]) => targetId),
+  );
+
+  const safeMergeActions = actions.filter(
+    (action) => !duplicateTargetIds.has(action.target.id),
+  );
+
+  const duplicateTargetConflicts = [...byTargetId.values()]
+    .filter((targetActions) => targetActions.length > 1)
+    .map((targetActions) => {
+      const first = targetActions[0];
+      if (first === undefined) {
+        throw new Error("Unexpected missing merge action for target group");
+      }
+
+      return {
+        target: first.target,
+        mergeActions: targetActions,
+        reason:
+          "Multiple legacy rows match the same RealOEM target; leaving for manual owner cleanup",
+      };
+    });
+
+  return { safeMergeActions, duplicateTargetConflicts };
 };
 
 const findUnsafeOwnerDeletes = (actions: DeleteAction[]): DeleteAction[] =>
@@ -481,7 +530,7 @@ const run = async (): Promise<void> => {
   const legacyCars = cars.filter(isLegacyIncomplete);
   const enrichedCars = cars.filter(isEnriched);
 
-  const mergeActions: MergeAction[] = [];
+  let mergeActions: MergeAction[] = [];
   const deleteLegacyActions: DeleteAction[] = [];
   const ambiguousMatches: AmbiguousMatch[] = [];
   const aliasCandidates: AliasCandidate[] = [];
@@ -515,6 +564,10 @@ const run = async (): Promise<void> => {
     }
   }
 
+  const { safeMergeActions, duplicateTargetConflicts } =
+    splitDuplicateTargetConflicts(mergeActions);
+  mergeActions = safeMergeActions;
+
   const duplicateMergeTargets = findDuplicateMergeTargets(mergeActions);
   const unsafeOwnerDeletes = findUnsafeOwnerDeletes(deleteLegacyActions);
 
@@ -528,6 +581,7 @@ const run = async (): Promise<void> => {
     plan: {
       mergePreservingLegacyIds: mergeActions.length,
       deleteOwnerDirectedLegacyRows: deleteLegacyActions.length,
+      duplicateTargetConflicts: duplicateTargetConflicts.length,
       ambiguousMatches: ambiguousMatches.length,
       aliasCandidates: aliasCandidates.length,
       baseChassisCandidates: baseChassisCandidates.length,
@@ -573,6 +627,16 @@ const run = async (): Promise<void> => {
         reason: action.reason,
         legacy: formatCar(action.legacy),
       })),
+      duplicateTargetConflicts: duplicateTargetConflicts
+        .slice(0, 30)
+        .map((conflict) => ({
+          reason: conflict.reason,
+          target: formatCar(conflict.target),
+          legacyRows: conflict.mergeActions.map((action) => ({
+            reason: action.reason,
+            legacy: formatCar(action.legacy),
+          })),
+        })),
       mergePreservingLegacyIds: mergeActions.slice(0, 40).map((action) => ({
         reason: action.reason,
         legacy: formatCar(action.legacy),

@@ -450,40 +450,45 @@ const run = async (): Promise<void> => {
     );
   }
 
-  await db.$transaction(async (tx) => {
-    await tx.car.updateMany({
-      where: { body: "" },
-      data: { body: null },
-    });
-
-    for (const update of plannedUpdates) {
-      await tx.car.update({
-        where: { id: update.id },
-        data: {
-          series: update.after.series,
-          generation: update.after.generation,
-          chassisCode: update.after.chassisCode,
-          model: update.after.model,
-          body: update.after.body,
-          engine: update.after.engine,
-        },
+  await db.$transaction(
+    async (tx) => {
+      await tx.car.updateMany({
+        where: { body: "" },
+        data: { body: null },
       });
-    }
 
-    for (const insert of plannedInserts) {
-      await tx.car.create({
-        data: {
-          make: "BMW",
-          series: insert.series,
-          generation: insert.generation,
-          chassisCode: insert.chassisCode,
-          model: insert.model,
-          body: insert.body,
-          engine: insert.engine,
-        },
-      });
-    }
-  });
+      for (const update of plannedUpdates) {
+        await tx.car.update({
+          where: { id: update.id },
+          data: {
+            series: update.after.series,
+            generation: update.after.generation,
+            chassisCode: update.after.chassisCode,
+            model: update.after.model,
+            body: update.after.body,
+            engine: update.after.engine,
+          },
+        });
+      }
+
+      for (const insert of plannedInserts) {
+        await tx.car.create({
+          data: {
+            make: "BMW",
+            series: insert.series,
+            generation: insert.generation,
+            chassisCode: insert.chassisCode,
+            model: insert.model,
+            body: insert.body,
+            engine: insert.engine,
+          },
+        });
+      }
+    },
+    {
+      timeout: 300_000,
+    },
+  );
 };
 
 try {
