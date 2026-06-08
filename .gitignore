@@ -46,9 +46,6 @@ yarn-error.log*
 *.dump
 backups/
 
-# scraper browser state
-scripts/data/realoem/chromium-profile/
-
 # idea files
 .idea
 # Sentry Config File
