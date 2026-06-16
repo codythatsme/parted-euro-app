@@ -1,14 +1,9 @@
 import { Stripe } from "stripe";
 import { z } from "zod";
-import { PartStatus } from "@prisma/client";
 import * as Sentry from "@sentry/nextjs";
 import { adminProcedure, createTRPCRouter, publicProcedure } from "../trpc";
 import { db } from "~/server/db";
-import {
-  calculateRequiredPartCounts,
-  calculateStock,
-} from "~/server/lib/stock";
-import { syncEbayQuantitiesForListings } from "~/server/lib/ebay-sync";
+import { calculateStock, SELLABLE_PART_STATUSES } from "~/server/lib/stock";
 // import { createStripeSession } from "@/pages/api/checkout";
 
 type ShippingCountryResponse = {
@@ -418,9 +413,8 @@ const getInterparcelShippingServices = async (input: ShippingServicesInput) => {
 
   const b2bFilteredCount = b2b
     ? 0
-    : afterHunterFilter.filter((s) =>
-        s.service.toLowerCase().includes("b2b"),
-      ).length;
+    : afterHunterFilter.filter((s) => s.service.toLowerCase().includes("b2b"))
+        .length;
 
   const servicesToQuote = afterHunterFilter.filter((service) => {
     if (b2b) return true;
@@ -428,46 +422,46 @@ const getInterparcelShippingServices = async (input: ShippingServicesInput) => {
   });
 
   const requests = servicesToQuote.map(async (service) => {
-      try {
-        const searchParams = new URLSearchParams({
-          ...interparcelParams,
-          service: service.id,
-        });
-        const response = await fetch(
-          `${interparcelBaseUrl}/quote/quote?${searchParams.toString()}`,
-          {
-            headers: {
-              Cookie: cookieHeader,
-              "x-csrf-token": csrfToken!,
-            },
+    try {
+      const searchParams = new URLSearchParams({
+        ...interparcelParams,
+        service: service.id,
+      });
+      const response = await fetch(
+        `${interparcelBaseUrl}/quote/quote?${searchParams.toString()}`,
+        {
+          headers: {
+            Cookie: cookieHeader,
+            "x-csrf-token": csrfToken!,
           },
-        );
+        },
+      );
 
-        if (!response.ok) {
-          return null;
-        }
-
-        const data = (await response.json()) as InterparcelShippingQuote;
-
-        if (!data.services?.length) {
-          return null;
-        }
-        return {
-          shipping_rate_data: {
-            type: "fixed_amount",
-            fixed_amount: {
-              amount: Math.ceil(Number(data.services[0]!.sellPrice) * 100),
-              currency: "AUD",
-            },
-            display_name: `${data.services[0]!.carrier} - ${
-              data.services[0]!.name
-            }`,
-          },
-        };
-      } catch (error) {
+      if (!response.ok) {
         return null;
       }
-    });
+
+      const data = (await response.json()) as InterparcelShippingQuote;
+
+      if (!data.services?.length) {
+        return null;
+      }
+      return {
+        shipping_rate_data: {
+          type: "fixed_amount",
+          fixed_amount: {
+            amount: Math.ceil(Number(data.services[0]!.sellPrice) * 100),
+            currency: "AUD",
+          },
+          display_name: `${data.services[0]!.carrier} - ${
+            data.services[0]!.name
+          }`,
+        },
+      };
+    } catch (error) {
+      return null;
+    }
+  });
   const availableServices = await Promise.allSettled(requests);
   const validServices = availableServices
     .filter((result) => result.status === "fulfilled" && result.value !== null)
@@ -485,6 +479,103 @@ const getInterparcelShippingServices = async (input: ShippingServicesInput) => {
 export type CheckoutItem = {
   itemId: string;
   quantity: number;
+};
+
+const checkoutItemSchema = z.object({
+  itemId: z.string(),
+  quantity: z.number().int().min(1),
+});
+
+const normalizeCheckoutItems = (items: CheckoutItem[]): CheckoutItem[] => {
+  const requestedByListingId = new Map<string, number>();
+
+  for (const item of items) {
+    requestedByListingId.set(
+      item.itemId,
+      (requestedByListingId.get(item.itemId) ?? 0) + item.quantity,
+    );
+  }
+
+  return Array.from(requestedByListingId, ([itemId, quantity]) => ({
+    itemId,
+    quantity,
+  }));
+};
+
+const validateCheckoutStock = async (items: CheckoutItem[]) => {
+  const normalizedItems = normalizeCheckoutItems(items);
+  const listings = await db.listing.findMany({
+    where: {
+      id: {
+        in: normalizedItems.map((item) => item.itemId),
+      },
+      active: true,
+    },
+    select: {
+      id: true,
+      title: true,
+      price: true,
+      images: {
+        orderBy: {
+          order: "asc",
+        },
+      },
+      components: {
+        select: {
+          partDetailId: true,
+          quantity: true,
+        },
+      },
+      allocatedParts: {
+        where: {
+          status: {
+            in: SELLABLE_PART_STATUSES,
+          },
+        },
+        select: {
+          id: true,
+          partDetailsId: true,
+          status: true,
+          createdAt: true,
+          inventoryLocation: { select: { name: true } },
+        },
+      },
+    },
+  });
+
+  const listingById = new Map(listings.map((listing) => [listing.id, listing]));
+  const results = normalizedItems.map((item) => {
+    const listing = listingById.get(item.itemId);
+
+    if (!listing) {
+      return {
+        listingId: item.itemId,
+        title: "Unavailable item",
+        requested: item.quantity,
+        available: 0,
+        ok: false,
+      };
+    }
+
+    const available = calculateStock({
+      components: listing.components,
+      inventoryParts: listing.allocatedParts,
+    });
+
+    return {
+      listingId: listing.id,
+      title: listing.title,
+      requested: item.quantity,
+      available,
+      ok: available >= item.quantity,
+    };
+  });
+
+  return {
+    ok: results.every((item) => item.ok),
+    items: results,
+    listings,
+  };
 };
 
 type StripeSessionRequest = {
@@ -514,298 +605,189 @@ export const createStripeSession = async (input: StripeSessionRequest) => {
       },
     },
     async (rootSpan) => {
-  try {
-    const redirectURL =
-      process.env.NODE_ENV === "development"
-        ? "http://localhost:3000"
-        : `https://partedeuro.com.au`;
+      try {
+        const redirectURL =
+          process.env.NODE_ENV === "development"
+            ? "http://localhost:3000"
+            : `https://partedeuro.com.au`;
 
-    const listingsPurchased = await Sentry.startSpan(
-      {
-        name: "checkout.validateStock",
-        op: "function",
-        attributes: { itemCount: items.length },
-      },
-      async (span) => {
-        const found = await db.listing.findMany({
-      where: {
-        id: {
-          in: items.map((item) => item.itemId),
-        },
-      },
-      select: {
-        id: true,
-        title: true,
-        price: true,
-        images: {
-          orderBy: {
-            order: "asc",
-          },
-        },
-        components: {
-          select: {
-            partDetailId: true,
-            quantity: true,
-          },
-        },
-        allocatedParts: {
-          where: { status: PartStatus.AVAILABLE },
-          select: {
-            id: true,
-            partDetailsId: true,
-            status: true,
-            createdAt: true,
-            inventoryLocation: { select: { name: true } },
-          },
-        },
-      },
-    });
+        const normalizedItems = normalizeCheckoutItems(items);
 
-        span.setAttribute("listingCount", found.length);
+        const stockValidation = await Sentry.startSpan(
+          {
+            name: "checkout.validateStock",
+            op: "function",
+            attributes: { itemCount: normalizedItems.length },
+          },
+          async (span) => {
+            const validation = await validateCheckoutStock(normalizedItems);
+            span.setAttribute("listingCount", validation.listings.length);
 
-        const listingById = new Map(
-          found.map((listing) => [listing.id, listing]),
+            if (!validation.ok) {
+              const unavailable = validation.items.find((item) => !item.ok);
+              throw new Error(
+                unavailable
+                  ? `${unavailable.title} is out of stock for requested quantity.`
+                  : "One or more cart items are out of stock.",
+              );
+            }
+
+            return validation;
+          },
         );
+        const listingsPurchased = stockValidation.listings;
 
-        for (const item of items) {
-          const listing = listingById.get(item.itemId);
-          if (!listing) {
-            throw new Error(`Listing ${item.itemId} not found`);
-          }
-          const stock = calculateStock({
-            components: listing.components,
-            inventoryParts: listing.allocatedParts,
-          });
-          if (stock < item.quantity) {
-            throw new Error(
-              `${listing.title} is out of stock for requested quantity.`,
-            );
-          }
-        }
-
-        return found;
-      },
-    );
-
-    const customer = await Sentry.startSpan(
-      {
-        name: "checkout.stripe.createCustomer",
-        op: "http.client",
-        attributes: { email },
-      },
-      async () =>
-        stripe.customers.create({
-          email,
-          name,
-        }),
-    );
-
-    const stripeLineItems = listingsPurchased.map((item) => {
-      const itemProvided = items.find(
-        (itemQuery) => itemQuery.itemId === item.id,
-      );
-      return {
-        price_data: {
-          currency: "aud",
-          product_data: {
-            name: item.title,
-            images: item.images[0] ? [item.images[0].url] : [],
-            metadata: {
-              inventoryLocations: item.allocatedParts
-                .map((part) => part.inventoryLocation?.name)
-                .join(","),
-            },
+        const customer = await Sentry.startSpan(
+          {
+            name: "checkout.stripe.createCustomer",
+            op: "http.client",
+            attributes: { email },
           },
-          unit_amount: item.price * 100,
-        },
-        quantity: itemProvided?.quantity ?? 1,
-      };
-    });
-
-    const { order, totalReservedParts } = await Sentry.startSpan(
-      {
-        name: "checkout.reserveParts",
-        op: "db",
-        attributes: { listingCount: listingsPurchased.length },
-      },
-      async (span) => {
-        let totalReservedParts = 0;
-        const newOrder = await db.$transaction(async (tx) => {
-          const created = await tx.order.create({
-            data: {
+          async () =>
+            stripe.customers.create({
               email,
               name,
-              status: input.adminCreated ? "Pending payment" : "PENDING",
-              subtotal: stripeLineItems.reduce(
-                (acc, cur) => acc + cur.price_data.unit_amount * cur.quantity,
-                0,
-              ),
-            },
-          });
+            }),
+        );
 
-          for (const listing of listingsPurchased) {
-            const itemProvided = items.find(
-              (itemQuery) => itemQuery.itemId === listing.id,
-            );
-            if (!itemProvided) continue;
-
-            const orderItem = await tx.orderItem.create({
-              data: {
-                orderId: created.id,
-                listingId: listing.id,
-                quantity: itemProvided.quantity,
-                unitPrice: listing.price,
+        const stripeLineItems = listingsPurchased.map((item) => {
+          const itemProvided = normalizedItems.find(
+            (itemQuery) => itemQuery.itemId === item.id,
+          );
+          return {
+            price_data: {
+              currency: "aud",
+              product_data: {
+                name: item.title,
+                images: item.images[0] ? [item.images[0].url] : [],
+                metadata: {
+                  inventoryLocations: item.allocatedParts
+                    .map((part) => part.inventoryLocation?.name)
+                    .join(","),
+                },
               },
+              unit_amount: item.price * 100,
+            },
+            quantity: itemProvided?.quantity ?? 1,
+          };
+        });
+
+        const order = await Sentry.startSpan(
+          {
+            name: "checkout.createPendingOrder",
+            op: "db",
+            attributes: { listingCount: listingsPurchased.length },
+          },
+          async (span) => {
+            const newOrder = await db.$transaction(async (tx) => {
+              const created = await tx.order.create({
+                data: {
+                  email,
+                  name,
+                  status: input.adminCreated ? "Pending payment" : "PENDING",
+                  subtotal: stripeLineItems.reduce(
+                    (acc, cur) =>
+                      acc + cur.price_data.unit_amount * cur.quantity,
+                    0,
+                  ),
+                },
+              });
+
+              for (const listing of listingsPurchased) {
+                const itemProvided = normalizedItems.find(
+                  (itemQuery) => itemQuery.itemId === listing.id,
+                );
+                if (!itemProvided) continue;
+
+                await tx.orderItem.create({
+                  data: {
+                    orderId: created.id,
+                    listingId: listing.id,
+                    quantity: itemProvided.quantity,
+                    unitPrice: listing.price,
+                  },
+                });
+              }
+
+              return created;
             });
 
-            const requirements = calculateRequiredPartCounts(
-              listing.components,
-              itemProvided.quantity,
-            );
-
-            const reservedPartIds: string[] = [];
-            for (const requirement of requirements) {
-              const candidates = await tx.part.findMany({
-                where: {
-                  allocatedToListingId: listing.id,
-                  partDetailsId: requirement.partDetailId,
-                  status: PartStatus.AVAILABLE,
-                },
-                orderBy: { createdAt: "asc" },
-                take: requirement.required,
-                select: { id: true },
-              });
-
-              if (candidates.length < requirement.required) {
-                throw new Error(
-                  `${listing.title} is out of stock for requested quantity.`,
-                );
-              }
-
-              reservedPartIds.push(...candidates.map((c) => c.id));
-            }
-
-            if (reservedPartIds.length > 0) {
-              const updated = await tx.part.updateMany({
-                where: {
-                  id: { in: reservedPartIds },
-                  status: PartStatus.AVAILABLE,
-                },
-                data: {
-                  status: PartStatus.RESERVED,
-                  reservedAt: new Date(),
-                },
-              });
-
-              if (updated.count !== reservedPartIds.length) {
-                throw new Error(
-                  "Inventory changed while reserving. Please retry.",
-                );
-              }
-
-              await tx.orderItemPart.createMany({
-                data: reservedPartIds.map((partId) => ({
-                  orderItemId: orderItem.id,
-                  partId,
-                })),
-                skipDuplicates: true,
-              });
-
-              totalReservedParts += reservedPartIds.length;
-            }
-          }
-
-          return created;
-        });
-
-        span.setAttribute("orderId", newOrder.id);
-        span.setAttribute("partCount", totalReservedParts);
-        return { order: newOrder, totalReservedParts };
-      },
-    );
-
-    rootSpan.setAttribute("orderId", order.id);
-    rootSpan.setAttribute("partCount", totalReservedParts);
-
-    const listingIds = listingsPurchased.map((l) => l.id);
-    await Sentry.startSpan(
-      {
-        name: "checkout.ebay.syncAfterReserve",
-        op: "http.client",
-        attributes: { orderId: order.id, listingCount: listingIds.length },
-      },
-      async () =>
-        syncEbayQuantitiesForListings(listingIds).catch((error) => {
-          console.error("eBay quantity sync failed after reservation", error);
-          Sentry.captureException(error, {
-            tags: { flow: "checkout", step: "ebay.syncAfterReserve" },
-            extra: { orderId: order.id, listingIds },
-          });
-        }),
-    );
-
-    const session = await Sentry.startSpan(
-      {
-        name: "checkout.stripe.createSession",
-        op: "http.client",
-        attributes: {
-          orderId: order.id,
-          lineItemCount: stripeLineItems.length,
-        },
-      },
-      async (span) => {
-        const created = await stripe.checkout.sessions.create({
-          customer: customer.id,
-          payment_method_types: ["card", "afterpay_clearpay", "link"],
-          phone_number_collection: {
-            enabled: true,
+            span.setAttribute("orderId", newOrder.id);
+            return newOrder;
           },
-          shipping_address_collection: {
-            allowed_countries: [
-              countryCode,
-            ] as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[],
-          },
-          shipping_options:
-            shippingOptions as Stripe.Checkout.SessionCreateParams.ShippingOption[],
-          line_items:
-            stripeLineItems as Stripe.Checkout.SessionCreateParams.LineItem[],
-          mode: "payment",
-          expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
-          success_url: `${redirectURL}/checkout/confirmation/${order.id}`,
-          cancel_url: `${redirectURL}/checkout?stripeError=true`,
-          metadata: {
-            orderId: order.id,
-          },
-        });
-        span.setAttribute("stripeSessionId", created.id);
-        return created;
-      },
-    );
+        );
 
-    return {
-      url: session.url,
-    };
-  } catch (err) {
-    if (err instanceof Error) {
-      console.log(err.message);
-      throw new Error(err.message);
-    }
-    throw new Error("Unknown error");
-  }
+        rootSpan.setAttribute("orderId", order.id);
+
+        const session = await Sentry.startSpan(
+          {
+            name: "checkout.stripe.createSession",
+            op: "http.client",
+            attributes: {
+              orderId: order.id,
+              lineItemCount: stripeLineItems.length,
+            },
+          },
+          async (span) => {
+            const created = await stripe.checkout.sessions.create({
+              customer: customer.id,
+              payment_method_types: ["card", "afterpay_clearpay", "link"],
+              phone_number_collection: {
+                enabled: true,
+              },
+              shipping_address_collection: {
+                allowed_countries: [
+                  countryCode,
+                ] as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[],
+              },
+              shipping_options:
+                shippingOptions as Stripe.Checkout.SessionCreateParams.ShippingOption[],
+              line_items:
+                stripeLineItems as Stripe.Checkout.SessionCreateParams.LineItem[],
+              mode: "payment",
+              success_url: `${redirectURL}/checkout/confirmation/${order.id}`,
+              cancel_url: `${redirectURL}/checkout?stripeError=true`,
+              metadata: {
+                orderId: order.id,
+              },
+            });
+            span.setAttribute("stripeSessionId", created.id);
+            return created;
+          },
+        );
+
+        return {
+          url: session.url,
+        };
+      } catch (err) {
+        if (err instanceof Error) {
+          console.log(err.message);
+          throw new Error(err.message);
+        }
+        throw new Error("Unknown error");
+      }
     },
   );
 };
 
 export const checkoutRouter = createTRPCRouter({
+  validateCartStock: publicProcedure
+    .input(
+      z.object({
+        items: z.array(checkoutItemSchema),
+      }),
+    )
+    .query(async ({ input }) => {
+      const validation = await validateCheckoutStock(input.items);
+      return {
+        ok: validation.ok,
+        items: validation.items,
+      };
+    }),
   getStripeCheckout: publicProcedure
     .input(
       z.object({
-        items: z.array(
-          z.object({
-            itemId: z.string(),
-            quantity: z.number(),
-          }),
-        ),
+        items: z.array(checkoutItemSchema),
         name: z.string(),
         email: z.string(),
         countryCode: z.string(),
@@ -867,215 +849,170 @@ export const checkoutRouter = createTRPCRouter({
           },
         },
         async (rootSpan) => {
-      const stripe = new Stripe(process.env.STRIPE_SECRET!, {
-        apiVersion: "2022-11-15",
-      });
-
-      const partIds = input.items.map((i) => i.partId);
-      const parts = await Sentry.startSpan(
-        {
-          name: "checkout.direct.validateParts",
-          op: "db",
-          attributes: { partCount: partIds.length },
-        },
-        async () => {
-          const found = await db.part.findMany({
-            where: { id: { in: partIds } },
-            select: {
-              id: true,
-              status: true,
-              allocatedToListingId: true,
-            },
+          const stripe = new Stripe(process.env.STRIPE_SECRET!, {
+            apiVersion: "2022-11-15",
           });
 
-          if (found.length !== partIds.length) {
-            throw new Error("One or more parts not found.");
-          }
+          const partIds = input.items.map((i) => i.partId);
+          const parts = await Sentry.startSpan(
+            {
+              name: "checkout.direct.validateParts",
+              op: "db",
+              attributes: { partCount: partIds.length },
+            },
+            async () => {
+              const found = await db.part.findMany({
+                where: { id: { in: partIds } },
+                select: {
+                  id: true,
+                  status: true,
+                  allocatedToListingId: true,
+                },
+              });
 
-          const unavailable = found.filter(
-            (p) => p.status !== PartStatus.AVAILABLE,
+              if (found.length !== partIds.length) {
+                throw new Error("One or more parts not found.");
+              }
+
+              const unavailable = found.filter(
+                (p) => !SELLABLE_PART_STATUSES.includes(p.status),
+              );
+              if (unavailable.length > 0) {
+                throw new Error("One or more parts are not available.");
+              }
+
+              return found;
+            },
           );
-          if (unavailable.length > 0) {
-            throw new Error("One or more parts are not available.");
-          }
 
-          return found;
-        },
-      );
+          const partById = new Map(parts.map((p) => [p.id, p]));
+          const subtotal = input.items.reduce((acc, i) => acc + i.price, 0);
 
-      const partById = new Map(parts.map((p) => [p.id, p]));
-      const subtotal = input.items.reduce((acc, i) => acc + i.price, 0);
+          const redirectURL =
+            process.env.NODE_ENV === "development"
+              ? "http://localhost:3000"
+              : "https://partedeuro.com.au";
 
-      const redirectURL =
-        process.env.NODE_ENV === "development"
-          ? "http://localhost:3000"
-          : "https://partedeuro.com.au";
-
-      const order = await Sentry.startSpan(
-        {
-          name: "checkout.direct.reserveParts",
-          op: "db",
-          attributes: { partCount: partIds.length },
-        },
-        async (span) => {
-          const created = await db.$transaction(async (tx) => {
-            const newOrder = await tx.order.create({
-              data: {
-                name: input.name,
-                email: input.email,
-                status: "Pending payment",
-                subtotal: Math.round(subtotal * 100),
-                shipping: Math.round(input.postageCost * 100),
-                shippingMethod: input.shippingMethod,
-              },
-            });
-
-            for (const item of input.items) {
-              const part = partById.get(item.partId);
-              const orderItem = await tx.orderItem.create({
-                data: {
-                  orderId: newOrder.id,
-                  listingId: part?.allocatedToListingId ?? null,
-                  description: item.description,
-                  quantity: 1,
-                  unitPrice: item.price,
-                },
-              });
-
-              await tx.orderItemPart.create({
-                data: {
-                  orderItemId: orderItem.id,
-                  partId: item.partId,
-                },
-              });
-            }
-
-            const updated = await tx.part.updateMany({
-              where: {
-                id: { in: partIds },
-                status: PartStatus.AVAILABLE,
-              },
-              data: {
-                status: PartStatus.RESERVED,
-                reservedAt: new Date(),
-              },
-            });
-
-            if (updated.count !== partIds.length) {
-              throw new Error(
-                "Inventory changed while reserving. Please retry.",
-              );
-            }
-
-            return newOrder;
-          });
-          span.setAttribute("orderId", created.id);
-          return created;
-        },
-      );
-
-      rootSpan.setAttribute("orderId", order.id);
-      rootSpan.setAttribute("partCount", partIds.length);
-
-      const affectedListingIds = parts
-        .map((p) => p.allocatedToListingId)
-        .filter((id): id is string => id !== null);
-      if (affectedListingIds.length > 0) {
-        await Sentry.startSpan(
-          {
-            name: "checkout.direct.ebay.syncAfterReserve",
-            op: "http.client",
-            attributes: {
-              orderId: order.id,
-              listingCount: affectedListingIds.length,
+          const order = await Sentry.startSpan(
+            {
+              name: "checkout.direct.createPendingOrder",
+              op: "db",
+              attributes: { partCount: partIds.length },
             },
-          },
-          async () =>
-            syncEbayQuantitiesForListings(affectedListingIds).catch((error) => {
-              console.error(
-                "eBay quantity sync failed after direct stripe checkout",
-                error,
-              );
-              Sentry.captureException(error, {
-                tags: { flow: "checkout-direct", step: "ebay.syncAfterReserve" },
-                extra: { orderId: order.id, listingIds: affectedListingIds },
-              });
-            }),
-        );
-      }
-
-      const customer = await Sentry.startSpan(
-        {
-          name: "checkout.direct.stripe.createCustomer",
-          op: "http.client",
-          attributes: { email: input.email },
-        },
-        async () =>
-          stripe.customers.create({
-            email: input.email,
-            name: input.name,
-          }),
-      );
-
-      const stripeLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] =
-        input.items.map((item) => ({
-          price_data: {
-            currency: "aud",
-            product_data: { name: item.description },
-            unit_amount: Math.round(item.price * 100),
-          },
-          quantity: 1,
-        }));
-
-      const shippingOptions: Stripe.Checkout.SessionCreateParams.ShippingOption[] =
-        input.postageCost > 0
-          ? [
-              {
-                shipping_rate_data: {
-                  type: "fixed_amount",
-                  display_name: input.shippingMethod,
-                  fixed_amount: {
-                    amount: Math.round(input.postageCost * 100),
-                    currency: "aud",
+            async (span) => {
+              const created = await db.$transaction(async (tx) => {
+                const newOrder = await tx.order.create({
+                  data: {
+                    name: input.name,
+                    email: input.email,
+                    status: "Pending payment",
+                    subtotal: Math.round(subtotal * 100),
+                    shipping: Math.round(input.postageCost * 100),
+                    shippingMethod: input.shippingMethod,
                   },
-                },
-              },
-            ]
-          : [];
+                });
 
-      const session = await Sentry.startSpan(
-        {
-          name: "checkout.direct.stripe.createSession",
-          op: "http.client",
-          attributes: {
-            orderId: order.id,
-            lineItemCount: stripeLineItems.length,
-          },
-        },
-        async (span) => {
-          const created = await stripe.checkout.sessions.create({
-            customer: customer.id,
-            payment_method_types: ["card", "afterpay_clearpay", "link"],
-            phone_number_collection: { enabled: true },
-            shipping_address_collection: {
-              allowed_countries: [
-                input.countryCode,
-              ] as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[],
+                for (const item of input.items) {
+                  const part = partById.get(item.partId);
+                  const orderItem = await tx.orderItem.create({
+                    data: {
+                      orderId: newOrder.id,
+                      listingId: part?.allocatedToListingId ?? null,
+                      description: item.description,
+                      quantity: 1,
+                      unitPrice: item.price,
+                    },
+                  });
+
+                  await tx.orderItemPart.create({
+                    data: {
+                      orderItemId: orderItem.id,
+                      partId: item.partId,
+                    },
+                  });
+                }
+
+                return newOrder;
+              });
+              span.setAttribute("orderId", created.id);
+              return created;
             },
-            shipping_options: shippingOptions,
-            line_items: stripeLineItems,
-            mode: "payment",
-            expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
-            success_url: `${redirectURL}/checkout/confirmation/${order.id}`,
-            cancel_url: `${redirectURL}/checkout?stripeError=true`,
-            metadata: { orderId: order.id },
-          });
-          span.setAttribute("stripeSessionId", created.id);
-          return created;
-        },
-      );
+          );
 
-      return { url: session.url };
+          rootSpan.setAttribute("orderId", order.id);
+          rootSpan.setAttribute("partCount", partIds.length);
+
+          const customer = await Sentry.startSpan(
+            {
+              name: "checkout.direct.stripe.createCustomer",
+              op: "http.client",
+              attributes: { email: input.email },
+            },
+            async () =>
+              stripe.customers.create({
+                email: input.email,
+                name: input.name,
+              }),
+          );
+
+          const stripeLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] =
+            input.items.map((item) => ({
+              price_data: {
+                currency: "aud",
+                product_data: { name: item.description },
+                unit_amount: Math.round(item.price * 100),
+              },
+              quantity: 1,
+            }));
+
+          const shippingOptions: Stripe.Checkout.SessionCreateParams.ShippingOption[] =
+            input.postageCost > 0
+              ? [
+                  {
+                    shipping_rate_data: {
+                      type: "fixed_amount",
+                      display_name: input.shippingMethod,
+                      fixed_amount: {
+                        amount: Math.round(input.postageCost * 100),
+                        currency: "aud",
+                      },
+                    },
+                  },
+                ]
+              : [];
+
+          const session = await Sentry.startSpan(
+            {
+              name: "checkout.direct.stripe.createSession",
+              op: "http.client",
+              attributes: {
+                orderId: order.id,
+                lineItemCount: stripeLineItems.length,
+              },
+            },
+            async (span) => {
+              const created = await stripe.checkout.sessions.create({
+                customer: customer.id,
+                payment_method_types: ["card", "afterpay_clearpay", "link"],
+                phone_number_collection: { enabled: true },
+                shipping_address_collection: {
+                  allowed_countries: [
+                    input.countryCode,
+                  ] as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry[],
+                },
+                shipping_options: shippingOptions,
+                line_items: stripeLineItems,
+                mode: "payment",
+                success_url: `${redirectURL}/checkout/confirmation/${order.id}`,
+                cancel_url: `${redirectURL}/checkout?stripeError=true`,
+                metadata: { orderId: order.id },
+              });
+              span.setAttribute("stripeSessionId", created.id);
+              return created;
+            },
+          );
+
+          return { url: session.url };
         },
       ),
     ),

@@ -5,6 +5,10 @@ import * as Sentry from "@sentry/nextjs";
 import { createInvoiceFromStripeEvent } from "~/server/xero/createInvoice";
 import { db } from "~/server/db";
 import { syncEbayQuantitiesForListings } from "~/server/lib/ebay-sync";
+import {
+  calculateRequiredPartCounts,
+  SELLABLE_PART_STATUSES,
+} from "~/server/lib/stock";
 
 export const maxDuration = 30;
 
@@ -63,7 +67,20 @@ export const POST = async (req: NextRequest) => {
               orderId,
             },
             select: {
+              id: true,
               listingId: true,
+              quantity: true,
+              listing: {
+                select: {
+                  title: true,
+                  components: {
+                    select: {
+                      partDetailId: true,
+                      quantity: true,
+                    },
+                  },
+                },
+              },
               allocatedParts: {
                 select: {
                   partId: true,
@@ -72,32 +89,100 @@ export const POST = async (req: NextRequest) => {
             },
           });
 
-          const reservedPartIds = orderItems.flatMap((item) =>
-            item.allocatedParts.map((part) => part.partId),
-          );
+          const soldPartCount = await Sentry.startSpan(
+            {
+              name: "webhook.markPartsSold",
+              op: "db",
+              attributes: { orderId, orderItemCount: orderItems.length },
+            },
+            async (span) => {
+              let partCount = 0;
 
-          if (reservedPartIds.length > 0) {
-            await Sentry.startSpan(
-              {
-                name: "webhook.markPartsSold",
-                op: "db",
-                attributes: { orderId, partCount: reservedPartIds.length },
-              },
-              async () =>
-                db.part.updateMany({
-                  where: {
-                    id: {
-                      in: reservedPartIds,
+              await db.$transaction(async (tx) => {
+                for (const item of orderItems) {
+                  const selectedPartIds = item.allocatedParts.map(
+                    (part) => part.partId,
+                  );
+
+                  if (
+                    selectedPartIds.length === 0 &&
+                    item.listingId &&
+                    item.listing
+                  ) {
+                    const requirements = calculateRequiredPartCounts(
+                      item.listing.components,
+                      item.quantity,
+                    );
+
+                    for (const requirement of requirements) {
+                      const candidates = await tx.part.findMany({
+                        where: {
+                          allocatedToListingId: item.listingId,
+                          partDetailsId: requirement.partDetailId,
+                          status: {
+                            in: SELLABLE_PART_STATUSES,
+                          },
+                        },
+                        orderBy: { createdAt: "asc" },
+                        take: requirement.required,
+                        select: { id: true },
+                      });
+
+                      if (candidates.length < requirement.required) {
+                        throw new Error(
+                          `${item.listing.title} is out of stock for requested quantity.`,
+                        );
+                      }
+
+                      selectedPartIds.push(
+                        ...candidates.map((candidate) => candidate.id),
+                      );
+                    }
+
+                    if (selectedPartIds.length > 0) {
+                      await tx.orderItemPart.createMany({
+                        data: selectedPartIds.map((partId) => ({
+                          orderItemId: item.id,
+                          partId,
+                        })),
+                        skipDuplicates: true,
+                      });
+                    }
+                  }
+
+                  const uniquePartIds = Array.from(new Set(selectedPartIds));
+                  if (uniquePartIds.length === 0) continue;
+
+                  const updated = await tx.part.updateMany({
+                    where: {
+                      id: {
+                        in: uniquePartIds,
+                      },
+                      status: {
+                        in: SELLABLE_PART_STATUSES,
+                      },
                     },
-                    status: PartStatus.RESERVED,
-                  },
-                  data: {
-                    status: PartStatus.SOLD,
-                    reservedAt: null,
-                  },
-                }),
-            );
-          }
+                    data: {
+                      status: PartStatus.SOLD,
+                      reservedAt: null,
+                    },
+                  });
+
+                  if (updated.count !== uniquePartIds.length) {
+                    throw new Error(
+                      "Inventory changed before payment completed. Please reconcile this order.",
+                    );
+                  }
+
+                  partCount += updated.count;
+                }
+              });
+
+              span.setAttribute("partCount", partCount);
+              return partCount;
+            },
+          );
+          rootSpan.setAttribute("partCount", soldPartCount);
 
           const completedListingIds = orderItems
             .map((item) => item.listingId)

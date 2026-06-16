@@ -120,7 +120,7 @@ export default function Checkout() {
 
   const { isLoaded } = useGoogleMapsApi();
   const utils = api.useUtils();
-  const { data: cart = [] } =
+  const { data: cart = [], isLoading: isCartLoading } =
     api.cart.getCart.useQuery(undefined, { refetchOnWindowFocus: true });
   const removeItemMutation = api.cart.removeItem.useMutation({
     onSuccess: () => utils.cart.getCart.invalidate(),
@@ -133,6 +133,32 @@ export default function Checkout() {
 
   // Extract listing IDs from the cart
   const listingIds = useMemo(() => cart.map((item) => item.listingId), [cart]);
+  const checkoutItems = useMemo(
+    () =>
+      cart.map((item) => ({
+        itemId: item.listingId,
+        quantity: item.quantity,
+      })),
+    [cart],
+  );
+
+  const stockValidation = api.checkout.validateCartStock.useQuery(
+    { items: checkoutItems },
+    {
+      enabled: !isCartLoading && checkoutItems.length > 0,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: true,
+      retry: false,
+      staleTime: 0,
+    },
+  );
+  const unavailableCartItems = useMemo(
+    () => stockValidation.data?.items.filter((item) => !item.ok) ?? [],
+    [stockValidation.data?.items],
+  );
+  const isCheckingStock =
+    checkoutItems.length > 0 &&
+    (stockValidation.isLoading || stockValidation.isFetching);
 
   // Fetch listing details using tRPC
   const { data: listingsData, isLoading } = api.cart.getListingsByIds.useQuery(
@@ -145,13 +171,12 @@ export default function Checkout() {
     },
   );
 
-  const { data: shippingData } =
-    api.cart.getCartShippingData.useQuery(
-      {
-        ids: listingIds,
-      },
-      { enabled: !!listingIds.length },
-    );
+  const { data: shippingData } = api.cart.getCartShippingData.useQuery(
+    {
+      ids: listingIds,
+    },
+    { enabled: !!listingIds.length },
+  );
 
   // Combine cart quantities with fetched listing data
   const populatedCart = useMemo((): PopulatedCartItem[] => {
@@ -221,8 +246,15 @@ export default function Checkout() {
     },
   );
 
-  const { mutateAsync: getStripeCheckout } =
+  const { mutateAsync: getStripeCheckout, isPending: isCheckoutPending } =
     api.checkout.getStripeCheckout.useMutation();
+  const isCheckoutDisabled =
+    cart.length === 0 ||
+    isCartLoading ||
+    isCheckingStock ||
+    stockValidation.isError ||
+    stockValidation.data?.ok !== true ||
+    isCheckoutPending;
 
   // Update address validation when country changes
   useEffect(() => {
@@ -274,19 +306,24 @@ export default function Checkout() {
   const isPickupOnly = (services: ShippingServices) =>
     services
       .filter((s) => s.shipping_rate_data.display_name !== "Admin Shipping")
-      .every((s) => s.shipping_rate_data.display_name === "Pickup from Parted Euro");
+      .every(
+        (s) => s.shipping_rate_data.display_name === "Pickup from Parted Euro",
+      );
 
   const hasPickup = (services: ShippingServices) =>
-    services.some((s) => s.shipping_rate_data.display_name === "Pickup from Parted Euro");
+    services.some(
+      (s) => s.shipping_rate_data.display_name === "Pickup from Parted Euro",
+    );
 
   async function proceedToStripe(data: CheckoutFormValues) {
     if (!shippingServices.data) return;
+    if (stockValidation.data?.ok !== true) {
+      toast.error("One or more cart items are no longer available.");
+      return;
+    }
 
     const { url } = await getStripeCheckout({
-      items: cart.map((item) => ({
-        itemId: item.listingId,
-        quantity: item.quantity,
-      })),
+      items: checkoutItems,
       name: data.name,
       email: data.email,
       countryCode: data.shipToCountryCode,
@@ -306,6 +343,16 @@ export default function Checkout() {
         type: "manual",
         message: "Address is required for Australian deliveries",
       });
+      return;
+    }
+
+    if (stockValidation.isError) {
+      toast.error("Unable to verify stock. Please refresh and try again.");
+      return;
+    }
+
+    if (stockValidation.data?.ok !== true) {
+      toast.error("One or more cart items are no longer available.");
       return;
     }
 
@@ -410,6 +457,38 @@ export default function Checkout() {
                   <AlertTitle>Payment Error</AlertTitle>
                   <AlertDescription>
                     There was a problem with your payment. Please try again.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+
+            {stockValidation.isError && cart.length > 0 && (
+              <div className="mb-6">
+                <Alert variant="destructive" className="relative">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Stock Check Failed</AlertTitle>
+                  <AlertDescription>
+                    We couldn&apos;t verify the stock in your cart. Refresh and
+                    try again.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+
+            {unavailableCartItems.length > 0 && (
+              <div className="mb-6">
+                <Alert variant="destructive" className="relative">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Stock Unavailable</AlertTitle>
+                  <AlertDescription>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      {unavailableCartItems.map((item) => (
+                        <li key={item.listingId}>
+                          {item.title}: {item.available} available,{" "}
+                          {item.requested} in cart
+                        </li>
+                      ))}
+                    </ul>
                   </AlertDescription>
                 </Alert>
               </div>
@@ -554,9 +633,16 @@ export default function Checkout() {
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={cart.length === 0}
+                  disabled={isCheckoutDisabled}
                 >
-                  Continue to Payment
+                  {isCheckingStock || isCheckoutPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {isCheckingStock ? "Checking Stock" : "Redirecting"}
+                    </>
+                  ) : (
+                    "Continue to Payment"
+                  )}
                 </Button>
               </form>
             </Form>

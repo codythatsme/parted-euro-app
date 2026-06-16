@@ -39,8 +39,14 @@ type FormData = z.infer<typeof formSchema>;
 const formatPrice = (dollars: number) => dollars.toFixed(2);
 
 export function DirectOrderFinalizeDialog() {
-  const { items, removeItem, updatePrice, clear, isFinalizeOpen, closeFinalize } =
-    usePendingOrder();
+  const {
+    items,
+    removeItem,
+    updatePrice,
+    clear,
+    isFinalizeOpen,
+    closeFinalize,
+  } = usePendingOrder();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
@@ -103,18 +109,8 @@ export function DirectOrderFinalizeDialog() {
         name: watch("name"),
         email: watch("email"),
         countryCode: watch("countryCode"),
-        shippingOptions: [
-          {
-            shipping_rate_data: {
-              type: "fixed_amount",
-              fixed_amount: {
-                amount: Math.round(watch("postageCost") * 100),
-                currency: "AUD",
-              },
-              display_name: watch("shippingMethod"),
-            },
-          },
-        ],
+        shippingMethod: watch("shippingMethod"),
+        postageCost: watch("postageCost"),
         items: items.map((item) => ({
           partId: item.partId,
           description: item.description,
@@ -137,7 +133,8 @@ export function DirectOrderFinalizeDialog() {
   };
 
   const totalPrice =
-    items.reduce((sum, item) => sum + item.price, 0) + (watch("postageCost") ?? 0);
+    items.reduce((sum, item) => sum + item.price, 0) +
+    (watch("postageCost") ?? 0);
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {

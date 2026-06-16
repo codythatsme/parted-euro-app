@@ -1,7 +1,14 @@
 "use client";
 
 import { type ColumnDef } from "@tanstack/react-table";
-import { ChevronRight, Hash, MapPin, MoreHorizontal, Tag, Type } from "lucide-react";
+import {
+  ChevronRight,
+  Hash,
+  MapPin,
+  MoreHorizontal,
+  Tag,
+  Type,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import {
@@ -130,10 +137,11 @@ export const getUnifiedPartColumns = ({
       const b = rowB.original.lastInventoryAdded;
       if (!a && !b) return 0;
       // Always sort nulls last regardless of sort direction
-      const isDesc = rowA
-        .getAllCells()
-        .find((c) => c.column.id === columnId)
-        ?.column.getIsSorted() === "desc";
+      const isDesc =
+        rowA
+          .getAllCells()
+          .find((c) => c.column.id === columnId)
+          ?.column.getIsSorted() === "desc";
       if (!a) return isDesc ? -1 : 1;
       if (!b) return isDesc ? 1 : -1;
       return a.getTime() - b.getTime();
@@ -186,8 +194,9 @@ export const getUnifiedPartColumns = ({
   {
     id: "location",
     accessorFn: (row) => {
-      const names = row.inventoryItems
-        .map((i) => i.inventoryLocation?.name ?? "Not assigned");
+      const names = row.inventoryItems.map(
+        (i) => i.inventoryLocation?.name ?? "Not assigned",
+      );
       return [...new Set(names)];
     },
     header: "",
@@ -197,7 +206,10 @@ export const getUnifiedPartColumns = ({
       displayName: "Location",
       icon: MapPin,
       type: "multiOption",
-      transformOptionFn: (value: string) => ({ label: value, value }),
+      transformOptionFn: (value) => {
+        const location = String(value);
+        return { label: location, value: location };
+      },
     },
   },
   {

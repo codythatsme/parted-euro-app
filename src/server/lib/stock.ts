@@ -1,4 +1,4 @@
-import { type PartStatus } from "@prisma/client";
+import { PartStatus } from "@prisma/client";
 
 export type StockComponent = {
   partDetailId: string;
@@ -30,12 +30,13 @@ export type RequiredPartCount = {
   perListing: number;
 };
 
-export type ReservationSelection = {
-  selectedPartIds: string[];
-  missingRequirements: RequiredPartCount[];
-};
+export const SELLABLE_PART_STATUSES: PartStatus[] = [
+  PartStatus.AVAILABLE,
+  PartStatus.RESERVED,
+];
 
-const isAvailable = (status: PartStatus): boolean => status === "AVAILABLE";
+const isAvailable = (status: PartStatus): boolean =>
+  SELLABLE_PART_STATUSES.includes(status);
 
 export const calculateComponentAvailability = (
   input: StockInput,
@@ -43,7 +44,8 @@ export const calculateComponentAvailability = (
   return input.components.map((component) => {
     const availableParts = input.inventoryParts.filter(
       (part) =>
-        part.partDetailsId === component.partDetailId && isAvailable(part.status),
+        part.partDetailsId === component.partDetailId &&
+        isAvailable(part.status),
     ).length;
 
     const requiredPerListing = Math.max(1, component.quantity);
@@ -75,42 +77,4 @@ export const calculateRequiredPartCounts = (
       required: perListing * listingQuantity,
     };
   });
-};
-
-export const selectPartsForReservation = (input: {
-  components: StockComponent[];
-  inventoryParts: Array<StockInventoryPart & { id: string; createdAt: Date }>;
-  listingQuantity: number;
-}): ReservationSelection => {
-  const requiredCounts = calculateRequiredPartCounts(
-    input.components,
-    input.listingQuantity,
-  );
-  const selectedPartIds: string[] = [];
-  const missingRequirements: RequiredPartCount[] = [];
-
-  for (const requirement of requiredCounts) {
-    const candidates = input.inventoryParts
-      .filter(
-        (part) =>
-          part.partDetailsId === requirement.partDetailId && isAvailable(part.status),
-      )
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-      .slice(0, requirement.required);
-
-    if (candidates.length < requirement.required) {
-      missingRequirements.push({
-        ...requirement,
-        required: requirement.required - candidates.length,
-      });
-      continue;
-    }
-
-    selectedPartIds.push(...candidates.map((candidate) => candidate.id));
-  }
-
-  return {
-    selectedPartIds,
-    missingRequirements,
-  };
 };
