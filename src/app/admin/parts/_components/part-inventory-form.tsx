@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -55,6 +55,7 @@ import { Badge } from "~/components/ui/badge";
 import { AspectRatio } from "~/components/ui/aspect-ratio";
 import { toast } from "sonner";
 import {
+  Car,
   Check,
   ChevronsUpDown,
   Loader2,
@@ -93,8 +94,9 @@ import {
   type InventoryCreateResult,
 } from "./post-inventory-dialogs";
 
-// Below this length we don't bother scraping RealOEM on blur (avoids firing on
-// partial input). BMW part numbers are 11 digits; alternates can be shorter.
+// Minimum part-number length before the RealOEM lookup button is enabled
+// (avoids firing on partial input). BMW part numbers are 11 digits; alternates
+// can be shorter.
 const MIN_REALOEM_PARTNO_LEN = 5;
 
 // ── Mode discriminant ────────────────────────────────────────
@@ -290,9 +292,6 @@ export function PartInventoryForm({
   // Deferred blur check: set when input blurs before search results arrive
   const [pendingBlurCheck, setPendingBlurCheck] = useState(false);
 
-  // Part number we've already run a RealOEM lookup for (dedupe repeated blurs)
-  const lastLookedUpPartNoRef = useRef<string | null>(null);
-
   // Location modal
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
@@ -415,7 +414,8 @@ export function PartInventoryForm({
     },
   });
 
-  // RealOEM compatible-cars lookup (fired on part-number blur for new parts).
+  // RealOEM compatible-cars lookup (triggered by the explicit "Look up cars"
+  // button for new parts).
   const lookupCompatibleCarsMutation =
     api.part.lookupCompatibleCars.useMutation({
       onSuccess: (data) => {
@@ -561,23 +561,19 @@ export function PartInventoryForm({
     [form],
   );
 
-  // Scrape RealOEM for a new part number and auto-fill matched compatible cars.
-  const runRealoemLookup = useCallback(
-    (partNo: string) => {
-      if (mode.kind !== "addPart") return;
-      const trimmed = partNo.trim();
-      if (trimmed.length < MIN_REALOEM_PARTNO_LEN) return;
-      if (trimmed === lastLookedUpPartNoRef.current) return;
-      lastLookedUpPartNoRef.current = trimmed;
-      lookupCompatibleCarsMutation.mutate({ partNo: trimmed });
-    },
-    [mode.kind, lookupCompatibleCarsMutation],
-  );
+  // Scrape RealOEM for the entered part number and auto-fill matched compatible
+  // cars. Triggered explicitly by the "Look up cars" button.
+  const runRealoemLookup = useCallback(() => {
+    if (mode.kind !== "addPart") return;
+    const trimmed = (form.getValues("partNo") ?? "").trim();
+    if (trimmed.length < MIN_REALOEM_PARTNO_LEN) return;
+    lookupCompatibleCarsMutation.mutate({ partNo: trimmed });
+  }, [mode.kind, form, lookupCompatibleCarsMutation]);
 
-  
+
   // Retroactive blur check: fires once the part search settles after the input
-  // blurred. If the typed number is an existing part, select it; otherwise it's
-  // a new part, so scrape RealOEM to auto-fill compatible cars.
+  // blurred. If the typed number matches an existing part, select it. New parts
+  // are not auto-scraped — the user triggers the RealOEM lookup explicitly.
   useEffect(() => {
     if (mode.kind !== "addPart") return;
     if (!pendingBlurCheck) return;
@@ -605,10 +601,7 @@ export function PartInventoryForm({
 
     if (exactMatch) {
       handleAutocompleteSelect(exactMatch.value);
-      return;
     }
-
-    runRealoemLookup(typedPartNo);
   }, [
     searchResults,
     pendingBlurCheck,
@@ -618,7 +611,6 @@ export function PartInventoryForm({
     existingPartSelected,
     form,
     handleAutocompleteSelect,
-    runRealoemLookup,
   ]);
 
   // Reset on open
@@ -628,7 +620,6 @@ export function PartInventoryForm({
     setIsNewPart(false);
     setExistingPartSelected(false);
     setPendingBlurCheck(false);
-    lastLookedUpPartNoRef.current = null;
     setSelectedCars([]);
     setSelectedPartTypes([]);
     setSearchTerm("");
@@ -1258,6 +1249,7 @@ export function PartInventoryForm({
                   isEditing={false}
                   setPendingBlurCheck={setPendingBlurCheck}
                   isLookingUpCars={lookupCompatibleCarsMutation.isPending}
+                  onLookupCars={runRealoemLookup}
                 />
               )}
 
@@ -2004,6 +1996,7 @@ type PartNumberAutocompleteProps = {
   isEditing: boolean;
   setPendingBlurCheck: (v: boolean) => void;
   isLookingUpCars: boolean;
+  onLookupCars: () => void;
 };
 
 function PartNumberAutocomplete({
@@ -2019,8 +2012,13 @@ function PartNumberAutocomplete({
   isEditing,
   setPendingBlurCheck,
   isLookingUpCars,
+  onLookupCars,
 }: PartNumberAutocompleteProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  // Enable the RealOEM lookup once the typed part number is long enough.
+  const canLookup =
+    (form.watch("partNo") ?? "").trim().length >= MIN_REALOEM_PARTNO_LEN;
 
   // Show dropdown when there are results and user is typing
   useEffect(() => {
@@ -2072,7 +2070,7 @@ function PartNumberAutocomplete({
                   }}
                 />
               </FormControl>
-              {existingPartSelected && (
+              {existingPartSelected ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -2082,15 +2080,29 @@ function PartNumberAutocomplete({
                   <X className="mr-1 h-3 w-3" />
                   Clear
                 </Button>
-              )}
-              {isLookingUpCars && (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin self-center text-muted-foreground" />
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="shrink-0"
+                  onClick={onLookupCars}
+                  disabled={isLookingUpCars || !canLookup}
+                >
+                  {isLookingUpCars ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Car className="mr-2 h-4 w-4" />
+                  )}
+                  {isLookingUpCars ? "Looking up…" : "Look up cars"}
+                </Button>
               )}
             </div>
             <FormMessage />
-            {isLookingUpCars && (
+            {!existingPartSelected && (
               <p className="text-xs text-muted-foreground">
-                Looking up compatible cars on RealOEM…
+                {isLookingUpCars
+                  ? "Looking up compatible cars on RealOEM…"
+                  : "Look up to auto-fill compatible cars from RealOEM."}
               </p>
             )}
           </FormItem>
