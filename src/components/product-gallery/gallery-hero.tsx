@@ -3,7 +3,7 @@
 import * as React from "react";
 import { ChevronLeft, ChevronRight, Maximize2 } from "lucide-react";
 import { cn } from "~/lib/utils";
-import { cloudinaryUrl, cloudinarySrcSet } from "~/lib/cloudinary-url";
+import { mediaUrl, mediaSrcSet } from "~/lib/media-url";
 import type { GalleryImage } from "./types";
 
 const ZOOM_SCALE = 2.75;
@@ -80,8 +80,8 @@ export function GalleryHero({
     };
   }, []);
 
-  const idleSrc = cloudinaryUrl(image.url, { width: 1200 });
-  const zoomedSrc = cloudinaryUrl(image.url, { width: 2000 });
+  const idleSrc = mediaUrl(image.url, { width: 1200 });
+  const zoomedSrc = mediaUrl(image.url, { width: 2000 });
 
   return (
     <div className="relative w-full">
@@ -109,7 +109,7 @@ export function GalleryHero({
             ref={imgRef}
             src={zoomed ? zoomedSrc : idleSrc}
             srcSet={
-              zoomed ? undefined : cloudinarySrcSet(image.url, [600, 1200, 2000])
+              zoomed ? undefined : mediaSrcSet(image.url, [600, 1200, 2000])
             }
             sizes="(min-width: 768px) 50vw, 100vw"
             alt={image.alt ?? ""}
@@ -128,7 +128,7 @@ export function GalleryHero({
         {/* Mobile: plain image, no inline zoom (use fullscreen for pinch) */}
         <img
           src={idleSrc}
-          srcSet={cloudinarySrcSet(image.url, [600, 1200])}
+          srcSet={mediaSrcSet(image.url, [600, 1200])}
           sizes="100vw"
           alt={image.alt ?? ""}
           onLoad={handleLoad}

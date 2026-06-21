@@ -68,7 +68,7 @@ import { type AdminInventoryItem } from "~/trpc/shared";
 import { useDebounce } from "~/hooks/use-debounce";
 import { FilterableCarSelect } from "~/components/ui/filterable-car-select";
 import { VirtualizedCombobox } from "~/components/ui/virtualized-combobox";
-import { UploadDropzone } from "~/components/CloudinaryUpload";
+import { UploadDropzone } from "~/components/MediaUpload";
 import {
   DndContext,
   closestCenter,

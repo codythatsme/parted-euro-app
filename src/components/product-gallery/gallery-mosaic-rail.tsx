@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { cn } from "~/lib/utils";
-import { cloudinaryUrl } from "~/lib/cloudinary-url";
+import { mediaUrl } from "~/lib/media-url";
 import type { GalleryImage } from "./types";
 
 type Props = {
@@ -43,7 +43,7 @@ export function GalleryMosaicRail({ images, activeIndex, onSelect }: Props) {
               style={{ aspectRatio: aspect }}
             >
               <img
-                src={cloudinaryUrl(image.url, { width: 400 })}
+                src={mediaUrl(image.url, { width: 400 })}
                 alt=""
                 className="h-full w-full object-cover"
                 loading="lazy"

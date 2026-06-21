@@ -6,11 +6,11 @@ import { cn } from "~/lib/utils";
 import { toast } from "sonner";
 import Compressor from "compressorjs";
 import {
-  uploadToCloudinary,
+  uploadToR2,
   type UploadEndpoint,
   type UploadResult,
   type UploadMetadata,
-} from "~/lib/cloudinary-client";
+} from "~/lib/media-client";
 import { Upload } from "lucide-react";
 
 const MAX_FILE_SIZE = 16 * 1024 * 1024; // 16MB
@@ -84,7 +84,7 @@ export function UploadDropzone({
           const file = processedFiles[i];
           if (!file) continue;
 
-          const result = await uploadToCloudinary({
+          const result = await uploadToR2({
             endpoint,
             file,
             metadata: {
@@ -253,7 +253,7 @@ export function UploadButton({
           const file = processedFiles[i];
           if (!file) continue;
 
-          const result = await uploadToCloudinary({
+          const result = await uploadToR2({
             endpoint,
             file,
             metadata: {
@@ -393,7 +393,7 @@ export function HomepageImageUploadZone({
       }}
       onUploadError={onUploadError}
       className={cn(
-        "ut-label:text-lg ut-allowed-content:text-muted-foreground ut-upload-icon:text-muted-foreground rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 transition-all hover:border-muted-foreground/50",
+        "rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 transition-all hover:border-muted-foreground/50",
         className,
       )}
     />

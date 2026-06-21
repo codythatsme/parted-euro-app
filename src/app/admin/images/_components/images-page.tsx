@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { api } from "~/trpc/react";
 import { toast } from "sonner";
-import { uploadToCloudinary } from "~/lib/cloudinary-client";
+import { uploadToR2 } from "~/lib/media-client";
 import { Image as ImageIcon, Plus, Check, Upload, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -171,7 +171,7 @@ export function ImagesPage() {
         const file = processedFiles[i];
         if (!file) continue; // Skip if file is undefined
 
-        const result = await uploadToCloudinary({
+        const result = await uploadToR2({
           endpoint: "partImage",
           file,
           metadata: {

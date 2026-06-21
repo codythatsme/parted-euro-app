@@ -115,7 +115,7 @@ type FulfillmentPolicyResponse = {
 // Default listing template used for eBay description. Supports placeholders:
 // {{DESCRIPTION}} and {{PARTS_TABLE}}
 const DEFAULT_EBAY_LISTING_TEMPLATE = `<div style="font-family: Arial; display:flex; flex-direction:column">
-  <img style="width:500px" src="https://res.cloudinary.com/dzhmqfmzi/image/upload/v1681223001/Logo_PARTED_EURO_jmszpz.png"/>
+  <img style="width:500px" src="${env.R2_PUBLIC_BASE_URL}/Logo_PARTED_EURO_jmszpz.png"/>
   <h3 style="text-decoration: underline;"> Product Description: </h3>
   <p>{{DESCRIPTION}}</p>
   <p>

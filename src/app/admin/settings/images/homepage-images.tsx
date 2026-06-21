@@ -1,7 +1,7 @@
 "use client";
 
 import { HomepageImageList } from "~/components/HomepageImageList";
-import { HomepageImageUploadZone } from "~/components/CloudinaryUpload";
+import { HomepageImageUploadZone } from "~/components/MediaUpload";
 import { api } from "~/trpc/react";
 
 export function HomepageImageManager() {
