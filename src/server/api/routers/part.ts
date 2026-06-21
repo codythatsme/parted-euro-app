@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { adminProcedure, createTRPCRouter } from "../trpc";
+import { scrapeRealoemPart } from "~/server/realoem/scrape";
+import { matchTuplesToCars } from "~/server/realoem/match";
 
 // Define part input validation schema
 const partDetailSchema = z.object({
@@ -186,6 +188,35 @@ export const partRouter = createTRPCRouter({
       return {
         ...part,
         defaultLocationId: recentLocated?.inventoryLocationId ?? null,
+      };
+    }),
+
+  // Scrape RealOEM for the cars a part fits, match them to existing Car rows,
+  // and silently log any unmatched fitments for later catalog review.
+  lookupCompatibleCars: adminProcedure
+    .input(z.object({ partNo: z.string().trim().min(1, "Part number is required") }))
+    .mutation(async ({ ctx, input }) => {
+      const { tuples } = await scrapeRealoemPart(input.partNo);
+      const { matchedCarIds, unmatched } = await matchTuplesToCars(ctx.db, tuples);
+
+      if (unmatched.length > 0) {
+        await ctx.db.realOemUnmatchedFitment.createMany({
+          data: unmatched.map((t) => ({
+            partNo: input.partNo,
+            chassisCode: t.chassisCode,
+            model: t.model,
+            body: t.body,
+            engine: t.engine,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return {
+        matchedCarIds,
+        matchedCount: matchedCarIds.length,
+        scrapedCount: tuples.length,
+        unmatchedCount: unmatched.length,
       };
     }),
 

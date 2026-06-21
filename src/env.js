@@ -37,6 +37,10 @@ export const env = createEnv({
     EBAY_RETURN_ID: z.string(),
     RESEND_API_KEY: z.string(),
     SENTRY_AUTH_TOKEN: z.string(),
+    // Optional: only needed for the RealOEM compatible-cars lookup. Kept
+    // optional so the app still boots if they're not deployed.
+    BRIGHT_DATA_API_KEY: z.string().optional(),
+    BRIGHT_DATA_ZONE_NAME: z.string().optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -86,6 +90,8 @@ export const env = createEnv({
     EBAY_RETURN_ID: process.env.EBAY_RETURN_ID,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN,
+    BRIGHT_DATA_API_KEY: process.env.BRIGHT_DATA_API_KEY,
+    BRIGHT_DATA_ZONE_NAME: process.env.BRIGHT_DATA_ZONE_NAME,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

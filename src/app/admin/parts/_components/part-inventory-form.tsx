@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -92,6 +92,10 @@ import {
   usePostInventoryDialogs,
   type InventoryCreateResult,
 } from "./post-inventory-dialogs";
+
+// Below this length we don't bother scraping RealOEM on blur (avoids firing on
+// partial input). BMW part numbers are 11 digits; alternates can be shorter.
+const MIN_REALOEM_PARTNO_LEN = 5;
 
 // ── Mode discriminant ────────────────────────────────────────
 
@@ -286,6 +290,9 @@ export function PartInventoryForm({
   // Deferred blur check: set when input blurs before search results arrive
   const [pendingBlurCheck, setPendingBlurCheck] = useState(false);
 
+  // Part number we've already run a RealOEM lookup for (dedupe repeated blurs)
+  const lastLookedUpPartNoRef = useRef<string | null>(null);
+
   // Location modal
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
   const [isCreatingLocation, setIsCreatingLocation] = useState(false);
@@ -407,6 +414,28 @@ export function PartInventoryForm({
       setIsCreatingLocation(false);
     },
   });
+
+  // RealOEM compatible-cars lookup (fired on part-number blur for new parts).
+  const lookupCompatibleCarsMutation =
+    api.part.lookupCompatibleCars.useMutation({
+      onSuccess: (data) => {
+        if (data.matchedCount === 0) {
+          toast.info("No RealOEM compatible cars found for this part number");
+          return;
+        }
+        const merged = Array.from(
+          new Set([...selectedCars, ...data.matchedCarIds]),
+        );
+        setSelectedCars(merged);
+        form.setValue("cars", merged);
+        toast.success(
+          `Added ${data.matchedCount} compatible car${data.matchedCount === 1 ? "" : "s"} from RealOEM`,
+        );
+      },
+      onError: (error) => {
+        toast.error(`RealOEM lookup failed: ${error.message}`);
+      },
+    });
 
   const locationForm = useForm({
     defaultValues: { name: "" },
@@ -532,27 +561,65 @@ export function PartInventoryForm({
     [form],
   );
 
+  // Scrape RealOEM for a new part number and auto-fill matched compatible cars.
+  const runRealoemLookup = useCallback(
+    (partNo: string) => {
+      if (mode.kind !== "addPart") return;
+      const trimmed = partNo.trim();
+      if (trimmed.length < MIN_REALOEM_PARTNO_LEN) return;
+      if (trimmed === lastLookedUpPartNoRef.current) return;
+      lastLookedUpPartNoRef.current = trimmed;
+      lookupCompatibleCarsMutation.mutate({ partNo: trimmed });
+    },
+    [mode.kind, lookupCompatibleCarsMutation],
+  );
+
   
-  // Retroactive blur check: fires when search results arrive after the input
-  // already blurred (e.g. user pastes and immediately clicks away).
+  // Retroactive blur check: fires once the part search settles after the input
+  // blurred. If the typed number is an existing part, select it; otherwise it's
+  // a new part, so scrape RealOEM to auto-fill compatible cars.
   useEffect(() => {
     if (mode.kind !== "addPart") return;
     if (!pendingBlurCheck) return;
     if (existingPartSelected) return;
-    if (searchResults.length === 0) return;
+    if (isSearching) return; // wait for the part search to settle
 
     const typedPartNo = form.getValues("partNo")?.trim() ?? "";
-    if (typedPartNo.length === 0) return;
+    if (typedPartNo.length === 0) {
+      setPendingBlurCheck(false);
+      return;
+    }
+
+    // Only trust search results that correspond to the typed value.
+    if (
+      typedPartNo.length >= 2 &&
+      debouncedSearchTerm.trim().toLowerCase() !== typedPartNo.toLowerCase()
+    ) {
+      return;
+    }
 
     const exactMatch = searchResults.find(
       (r) => r.value.toLowerCase() === typedPartNo.toLowerCase(),
     );
+    setPendingBlurCheck(false);
 
     if (exactMatch) {
       handleAutocompleteSelect(exactMatch.value);
+      return;
     }
-    setPendingBlurCheck(false);
-  }, [searchResults, pendingBlurCheck, mode.kind, existingPartSelected, form, handleAutocompleteSelect]);
+
+    runRealoemLookup(typedPartNo);
+  }, [
+    searchResults,
+    pendingBlurCheck,
+    isSearching,
+    debouncedSearchTerm,
+    mode.kind,
+    existingPartSelected,
+    form,
+    handleAutocompleteSelect,
+    runRealoemLookup,
+  ]);
 
   // Reset on open
   useEffect(() => {
@@ -561,6 +628,7 @@ export function PartInventoryForm({
     setIsNewPart(false);
     setExistingPartSelected(false);
     setPendingBlurCheck(false);
+    lastLookedUpPartNoRef.current = null;
     setSelectedCars([]);
     setSelectedPartTypes([]);
     setSearchTerm("");
@@ -1189,6 +1257,7 @@ export function PartInventoryForm({
                   onClear={handleClearExistingPart}
                   isEditing={false}
                   setPendingBlurCheck={setPendingBlurCheck}
+                  isLookingUpCars={lookupCompatibleCarsMutation.isPending}
                 />
               )}
 
@@ -1934,6 +2003,7 @@ type PartNumberAutocompleteProps = {
   onClear: () => void;
   isEditing: boolean;
   setPendingBlurCheck: (v: boolean) => void;
+  isLookingUpCars: boolean;
 };
 
 function PartNumberAutocomplete({
@@ -1948,6 +2018,7 @@ function PartNumberAutocomplete({
   onClear,
   isEditing,
   setPendingBlurCheck,
+  isLookingUpCars,
 }: PartNumberAutocompleteProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -2012,8 +2083,16 @@ function PartNumberAutocomplete({
                   Clear
                 </Button>
               )}
+              {isLookingUpCars && (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin self-center text-muted-foreground" />
+              )}
             </div>
             <FormMessage />
+            {isLookingUpCars && (
+              <p className="text-xs text-muted-foreground">
+                Looking up compatible cars on RealOEM…
+              </p>
+            )}
           </FormItem>
         )}
       />

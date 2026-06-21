@@ -85,6 +85,22 @@ model Car {
   @@index([chassisCode])
 }
 
+/// Fitments RealOEM lists for a part that have no matching Car row. Logged
+/// silently during the add-part lookup so the catalog can be strengthened
+/// later. Deduped on the full tuple per part number.
+model RealOemUnmatchedFitment {
+  id          String   @id @default(cuid())
+  partNo      String
+  chassisCode String
+  model       String
+  body        String
+  engine      String
+  createdAt   DateTime @default(now())
+
+  @@unique([partNo, chassisCode, model, body, engine])
+  @@index([partNo])
+}
+
 model Donor {
   vin            String    @id @unique
   cost           Float

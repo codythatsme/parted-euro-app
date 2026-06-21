@@ -15,6 +15,12 @@ const createContext = async (req: NextRequest) => {
   });
 };
 
+// The RealOEM compatible-cars lookup (part.lookupCompatibleCars) drives a few
+// sequential Bright Data Web Unlocker requests that each clear Cloudflare, so
+// allow this route longer than the default. Safe upper bound for all other
+// procedures; clamped down automatically on plans with a lower ceiling.
+export const maxDuration = 120;
+
 const handler = (req: NextRequest) =>
   fetchRequestHandler({
     endpoint: "/api/trpc",
