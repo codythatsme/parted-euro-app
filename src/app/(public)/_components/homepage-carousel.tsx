@@ -29,18 +29,20 @@ export function HomepageCarousel({
       }}
     >
       <CarouselContent className="-ml-0">
-        {images.map((image) => (
-          <CarouselItem key={image.id} className="pl-0">
-            <Image
-              src={image.url!}
-              alt="hero"
-              className="h-[90vh] w-full object-cover"
-              width={1920}
-              height={1080}
-              priority
-            />
-          </CarouselItem>
-        ))}
+        {images.map((image) =>
+          image.url ? (
+            <CarouselItem key={image.id} className="pl-0">
+              <Image
+                src={image.url}
+                alt="hero"
+                className="h-[90vh] w-full object-cover"
+                width={1920}
+                height={1080}
+                priority
+              />
+            </CarouselItem>
+          ) : null,
+        )}
       </CarouselContent>
     </Carousel>
   );

@@ -5,6 +5,7 @@ import { api } from "~/trpc/react";
 import { parseAsInteger, useQueryState } from "nuqs";
 import { useDebounce } from "use-debounce";
 import { Search, Filter, X, ArrowUpDown, Car, Loader2 } from "lucide-react";
+import { mediaUrl } from "~/lib/media-url";
 
 // UI Components
 import { Button } from "~/components/ui/button";
@@ -545,7 +546,7 @@ export default function ListingsPage() {
                         )}
                         {listing.images?.[0] ? (
                           <img
-                            src={listing.images[0].url}
+                            src={mediaUrl(listing.images[0].url, { width: 600 })}
                             alt={listing.title}
                             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />

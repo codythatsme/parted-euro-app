@@ -2,6 +2,7 @@ import { Clock, Mail, MapPin, Phone, Route } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
+import { mediaUrl } from "~/lib/media-url";
 
 export type ContactCardData = {
   heading: string;
@@ -126,7 +127,7 @@ function Hero({
       {imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={imageUrl}
+          src={mediaUrl(imageUrl, { width: 1200 })}
           alt=""
           className="h-[260px] w-full object-cover sm:h-[320px] md:h-[380px]"
         />

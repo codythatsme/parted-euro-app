@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { api } from "~/trpc/react";
 import { parseAsInteger, useQueryState } from "nuqs";
 import { useDebounce } from "use-debounce";
+import { mediaUrl } from "~/lib/media-url";
 import {
   Search,
   Filter,
@@ -498,7 +499,7 @@ export default function WreckingPage() {
                     <div className="relative h-[200px] w-full bg-muted">
                       {donor.images?.[0] ? (
                         <img
-                          src={donor.images[0].url}
+                          src={mediaUrl(donor.images[0].url, { width: 600 })}
                           alt={`${donor.car.make} ${donor.car.model}`}
                           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         />
