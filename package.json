@@ -7,8 +7,6 @@
     "build": "next build",
     "check": "next lint && tsc --noEmit",
     "db:backup": "bash -c 'mkdir -p backups && URL=$(grep \"^PROD_DB_URL=\" .env | cut -d= -f2- | sed s/\\\"//g | cut -d? -f1) && pg_dump --no-owner --no-privileges \"$URL\" > backups/backup-$(date +%Y%m%d-%H%M%S).sql && echo \"Backup saved to backups/\"'",
-    "db:generate": "prisma migrate dev",
-    "db:migrate": "prisma migrate deploy",
     "db:populate": "bash scripts/db-populate.sh",
     "db:push": "prisma db push",
     "db:start": "docker compose up -d db",
