@@ -18,9 +18,14 @@ export const env = createEnv({
     STRIPE_SECRET: z.string(),
     STRIPE_WEBHOOK_SECRET: z.string(),
     AUSPOST_API_KEY: z.string(),
-    CLOUDINARY_NAME: z.string(),
-    CLOUDINARY_API_KEY: z.string(),
-    CLOUDINARY_API_SECRET: z.string(),
+    // Cloudflare R2 (S3-compatible) media storage.
+    R2_ACCOUNT_ID: z.string(),
+    R2_ACCESS_KEY_ID: z.string(),
+    R2_SECRET_ACCESS_KEY: z.string(),
+    R2_BUCKET_NAME: z.string(),
+    // Public origin that serves the R2 bucket (custom domain on Cloudflare),
+    // e.g. https://parted-storage.codythatsme.dev. No trailing slash.
+    R2_PUBLIC_BASE_URL: z.string().url(),
     XERO_CLIENT_ID: z.string(),
     XERO_CLIENT_SECRET: z.string(),
     XERO_REDIRECT_URI: z.string(),
@@ -54,6 +59,14 @@ export const env = createEnv({
   client: {
     // NEXT_PUBLIC_CLIENTVAR: z.string(),
     NEXT_PUBLIC_GOOGLE_MAPS_KEY: z.string(),
+    // Public origin that serves R2 media to the browser. Mirrors
+    // R2_PUBLIC_BASE_URL (kept separate so it can be exposed client-side).
+    NEXT_PUBLIC_MEDIA_PUBLIC_BASE_URL: z.string().url(),
+    // Optional Cloudflare Image Transformations base, e.g.
+    // https://parted-storage.codythatsme.dev/cdn-cgi/image. When unset, images
+    // are served at their original size (no on-the-fly resizing). Only set this
+    // once "Image Transformations" is enabled for the zone.
+    NEXT_PUBLIC_IMAGE_TRANSFORM_BASE_URL: z.string().url().optional(),
   },
 
   /**
@@ -71,9 +84,15 @@ export const env = createEnv({
     STRIPE_SECRET: process.env.STRIPE_SECRET,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
     AUSPOST_API_KEY: process.env.AUSPOST_API_KEY,
-    CLOUDINARY_NAME: process.env.CLOUDINARY_NAME,
-    CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
-    CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
+    R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
+    R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
+    R2_BUCKET_NAME: process.env.R2_BUCKET_NAME,
+    R2_PUBLIC_BASE_URL: process.env.R2_PUBLIC_BASE_URL,
+    NEXT_PUBLIC_MEDIA_PUBLIC_BASE_URL:
+      process.env.NEXT_PUBLIC_MEDIA_PUBLIC_BASE_URL,
+    NEXT_PUBLIC_IMAGE_TRANSFORM_BASE_URL:
+      process.env.NEXT_PUBLIC_IMAGE_TRANSFORM_BASE_URL,
     XERO_CLIENT_ID: process.env.XERO_CLIENT_ID,
     XERO_CLIENT_SECRET: process.env.XERO_CLIENT_SECRET,
     XERO_REDIRECT_URI: process.env.XERO_REDIRECT_URI,

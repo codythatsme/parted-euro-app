@@ -50,3 +50,6 @@ backups/
 .idea
 # Sentry Config File
 .env.sentry-build-plugin
+
+# R2 migration scrape manifest (generated artifact, ~21k lines)
+scripts/data/r2-migration-manifest.jsonl

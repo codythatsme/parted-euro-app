@@ -5,6 +5,30 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import "./src/env.js";
 
+// Hostname that serves R2 media, derived from the public base URL so the
+// allow-list tracks the env var instead of hardcoding it.
+let mediaHostname;
+try {
+  mediaHostname = process.env.NEXT_PUBLIC_MEDIA_PUBLIC_BASE_URL
+    ? new URL(process.env.NEXT_PUBLIC_MEDIA_PUBLIC_BASE_URL).hostname
+    : undefined;
+} catch {
+  mediaHostname = undefined;
+}
+
+/** @type {NonNullable<import("next").NextConfig["images"]>["remotePatterns"]} */
+const remotePatterns = [
+  // Legacy hosts: still present in the DB until the prod URL rewrite runs.
+  // Remove these once every row has been migrated to R2.
+  { protocol: "https", hostname: "res.cloudinary.com" },
+  { protocol: "http", hostname: "res.cloudinary.com" },
+  { protocol: "https", hostname: "utfs.io" },
+];
+// First-party R2 media served via the Cloudflare custom domain.
+if (mediaHostname) {
+  remotePatterns.unshift({ protocol: "https", hostname: mediaHostname });
+}
+
 /** @type {import("next").NextConfig} */
 const config = {
   typescript: {
@@ -18,7 +42,7 @@ const config = {
   },
   serverExternalPackages: ["@react-pdf/renderer"],
   images: {
-    domains: ["res.cloudinary.com", "utfs.io"],
+    remotePatterns,
   },
   async redirects() {
     return [

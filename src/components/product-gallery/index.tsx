@@ -8,7 +8,7 @@ import type { DataSource } from "react-photoswipe-gallery";
 import "photoswipe/style.css";
 
 import { cn } from "~/lib/utils";
-import { cloudinaryUrl } from "~/lib/cloudinary-url";
+import { mediaUrl } from "~/lib/media-url";
 import { GalleryHero } from "./gallery-hero";
 import { GalleryFilmstrip } from "./gallery-filmstrip";
 import { GalleryMosaicRail } from "./gallery-mosaic-rail";
@@ -66,7 +66,7 @@ function ProductGalleryInner({ images, className }: Props) {
           );
         }
       };
-      probe.src = cloudinaryUrl(img.url, { width: 2400 });
+      probe.src = mediaUrl(img.url, { width: 2400 });
     });
     return () => {
       cancelled.current = true;
@@ -94,7 +94,7 @@ function ProductGalleryInner({ images, className }: Props) {
       images.map((img, i) => {
         const { width, height } = dimsFor(img);
         return {
-          src: cloudinaryUrl(img.url, { width: 2400 }),
+          src: mediaUrl(img.url, { width: 2400 }),
           width,
           height,
           alt: img.alt,

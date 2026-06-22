@@ -12,7 +12,7 @@ import {
 } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { UploadDropzone } from "~/components/CloudinaryUpload";
+import { UploadDropzone } from "~/components/MediaUpload";
 import { ContactCard, type ContactCardData } from "~/components/contact-card";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";

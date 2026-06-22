@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { cn } from "~/lib/utils";
-import { cloudinaryUrl } from "~/lib/cloudinary-url";
+import { mediaUrl } from "~/lib/media-url";
 import type { GalleryImage } from "./types";
 
 type Props = {
@@ -52,7 +52,7 @@ export function GalleryFilmstrip({ images, activeIndex, onSelect }: Props) {
             )}
           >
             <img
-              src={cloudinaryUrl(image.url, { width: 200 })}
+              src={mediaUrl(image.url, { width: 200 })}
               alt=""
               className="h-full w-full object-cover"
               loading="lazy"
