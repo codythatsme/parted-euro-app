@@ -8,11 +8,12 @@
  *
  * Dry-run by default. Nothing is written without --execute.
  *
- *   # Verify locally (reads DATABASE_URL):
- *   bun run scripts/rewrite-media-urls.ts
- *   bun run scripts/rewrite-media-urls.ts --execute
+ * Targets PROD_DB_URL from .env by default (no connection flag needed):
  *
- *   # Later, against prod (pass the prod connection string explicitly):
+ *   bun run scripts/rewrite-media-urls.ts            # dry run against PROD_DB_URL
+ *   bun run scripts/rewrite-media-urls.ts --execute  # apply to PROD_DB_URL
+ *
+ *   # Or point at a specific database explicitly (e.g. a local DB):
  *   bun run scripts/rewrite-media-urls.ts --database-url="postgres://…" --execute
  *
  * Idempotent: rows already on the R2 host are ignored, so re-runs are safe.
@@ -103,9 +104,13 @@ function chunk<T>(items: T[], size: number): T[][] {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  const databaseUrl = args.databaseUrl ?? process.env.DATABASE_URL ?? null;
+  // Defaults to PROD_DB_URL from .env so the prod rewrite needs no flags;
+  // --database-url overrides it (e.g. to target a local DB).
+  const databaseUrl = args.databaseUrl ?? process.env.PROD_DB_URL ?? null;
   if (!databaseUrl) {
-    console.error("No database URL. Pass --database-url= or set DATABASE_URL.");
+    console.error(
+      "No database URL. Set PROD_DB_URL in .env, or pass --database-url=.",
+    );
     process.exit(1);
   }
 

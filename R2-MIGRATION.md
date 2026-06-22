@@ -56,16 +56,19 @@ Done and verified locally:
 
 ## Prod cutover (run when ready)
 
-The R2 bucket is already populated, so prod only needs the DB URL rewrite. From
-this checkout (so the scrape manifest is present for the safety check):
+The R2 bucket is already populated, so prod only needs the DB URL rewrite. The
+script targets `PROD_DB_URL` from `.env` by default. Run from this checkout (so
+the scrape manifest is present for the safety check):
 
 ```bash
 # 1. Dry run first — eyeball the counts and sample mappings:
-bun run scripts/rewrite-media-urls.ts --database-url="<PROD_DB_URL>"
+bun run scripts/rewrite-media-urls.ts
 
 # 2. Apply:
-bun run scripts/rewrite-media-urls.ts --database-url="<PROD_DB_URL>" --execute
+bun run scripts/rewrite-media-urls.ts --execute
 ```
+
+(Use `--database-url="postgres://…"` to override the target, e.g. for a local DB.)
 
 Deploy the app code together with (or before) the rewrite. Old Cloudinary/utfs
 URLs keep rendering until the rewrite runs (the host stays allow-listed), so
